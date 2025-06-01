@@ -1,7 +1,7 @@
 import { Folder, FileText, Calendar } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 import { aggregateByDate } from '../utils/dataAggregator';
-import { getMockProjects, readProjectLogs } from '../utils/claudeProjectScanner';
+import { scanClaudeProjects, readProjectLogs } from '../utils/electronFileSystem';
 import { useEffect } from 'react';
 
 export const Sidebar = () => {
@@ -18,9 +18,13 @@ export const Sidebar = () => {
   useEffect(() => {
     // Load projects on component mount
     const loadProjects = async () => {
-      // For now, use mock data since we can't access file system directly in browser
-      const projectList = getMockProjects();
-      setProjects(projectList);
+      try {
+        const projectList = await scanClaudeProjects();
+        setProjects(projectList);
+      } catch (error) {
+        console.error('Failed to load projects:', error);
+        // Optionally show error message to user
+      }
     };
     
     loadProjects();
@@ -33,7 +37,6 @@ export const Sidebar = () => {
     if (!project) return;
 
     try {
-      // In a real implementation, this would read the actual JSONL files
       const entries = await readProjectLogs(project.path);
       const stats = aggregateByDate(entries, settings.exchangeRate);
       
@@ -41,6 +44,7 @@ export const Sidebar = () => {
       setDailyStats(stats);
     } catch (error) {
       console.error('Failed to load project logs:', error);
+      // Optionally show error message to user
     }
   };
 
