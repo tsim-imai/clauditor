@@ -9,11 +9,7 @@ export const Header = () => {
 
   const toggleDarkMode = () => {
     updateSettings({ darkMode: !settings.darkMode });
-    if (!settings.darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    // DOM操作はApp.tsxのuseEffectに任せる
   };
 
   return (
