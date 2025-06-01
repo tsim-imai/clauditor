@@ -956,12 +956,34 @@ body {
     }
     
     .view-toggle {
-        flex-direction: column;
         gap: 0.25rem;
+    }
+    
+    .view-btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
     }
     
     .view-btn span {
         display: none;
+    }
+}
+
+@media (max-width: 850px) {
+    .time-filter-btn {
+        padding: 0.5rem 1.25rem;
+        font-size: 1.0rem;
+    }
+    
+    .time-filter-buttons {
+        gap: 0.5rem;
+    }
+}
+
+@media (max-width: 600px) {
+    .time-filter-bar {
+        flex-direction: column;
+        gap: 1rem;
     }
 }
 
@@ -974,14 +996,6 @@ body {
         padding: 1rem;
     }
     
-    .time-filter-bar {
-        flex-direction: column;
-        gap: 1rem;
-    }
-    
-    .time-filter-buttons {
-        flex-wrap: wrap;
-    }
     
     .stats-overview {
         grid-template-columns: 1fr;

@@ -169,7 +169,7 @@ const createWindow = (): void => {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    minWidth: 800,
+    minWidth: 700,
     minHeight: 600,
     webPreferences: {
       nodeIntegration: false,
@@ -195,8 +195,8 @@ const createWindow = (): void => {
   
   // 開発時のみDevToolsを自動で開く
   if (isDev) {
-    // DevToolsは手動で開く（Cmd+Opt+I or F12）
-    // mainWindow.webContents.openDevTools();
+    // DevToolsを別ウィンドウで開く
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
   // Show window when ready
