@@ -35,4 +35,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeFileSystemChangeListener: () => {
     ipcRenderer.removeAllListeners('file-system-change');
   },
+
+  // Show directory dialog
+  showDirectoryDialog: (): Promise<string | null> =>
+    ipcRenderer.invoke('show-directory-dialog'),
+
+  // Validate project path
+  validateProjectPath: (path: string): Promise<boolean> =>
+    ipcRenderer.invoke('validate-project-path', path),
 });

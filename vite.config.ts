@@ -29,6 +29,12 @@ export default defineConfig({
   build: {
     // Ensure compatibility with Electron
     target: 'esnext',
-    minify: false,
+    minify: process.env.NODE_ENV === 'production',
+    rollupOptions: {
+      external: ['electron'],
+      output: {
+        format: 'es',
+      },
+    },
   },
 })

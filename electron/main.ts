@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
@@ -13,6 +13,84 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
 let fileWatcher: chokidar.FSWatcher | null = null;
+
+// Simple cache for file contents and metadata
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+  fileModTime: number;
+  checksum: string;
+}
+
+const cache = new Map<string, CacheEntry>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Generate simple checksum for cache validation
+const generateChecksum = (data: any): string => {
+  const str = JSON.stringify(data);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return hash.toString(36);
+};
+
+// Check if cache entry is valid
+const isCacheValid = (entry: CacheEntry, fileModTime: number): boolean => {
+  const now = Date.now();
+  const isNotExpired = (now - entry.timestamp) < CACHE_TTL;
+  const isFileUnchanged = entry.fileModTime === fileModTime;
+  return isNotExpired && isFileUnchanged;
+};
+
+// Get from cache
+const getFromCache = <T>(key: string, fileModTime: number): T | null => {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  
+  if (!isCacheValid(entry, fileModTime)) {
+    cache.delete(key);
+    return null;
+  }
+  
+  console.log(`Cache hit: ${key}`);
+  return entry.data as T;
+};
+
+// Set to cache
+const setToCache = <T>(key: string, data: T, fileModTime: number): void => {
+  const entry: CacheEntry = {
+    data,
+    timestamp: Date.now(),
+    fileModTime,
+    checksum: generateChecksum(data),
+  };
+  
+  cache.set(key, entry);
+  console.log(`Cache set: ${key} (size: ${JSON.stringify(data).length} bytes)`);
+  
+  // Clean up old entries (simple LRU)
+  if (cache.size > 50) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey) {
+      cache.delete(oldestKey);
+    }
+  }
+};
+
+// Clear cache for specific patterns
+const clearCachePattern = (pattern: string): void => {
+  const keysToDelete: string[] = [];
+  for (const key of cache.keys()) {
+    if (key.includes(pattern)) {
+      keysToDelete.push(key);
+    }
+  }
+  keysToDelete.forEach(key => cache.delete(key));
+  console.log(`Cache cleared for pattern: ${pattern} (${keysToDelete.length} entries)`);
+};
 
 // Memory-efficient processing of large JSONL files
 const processLargeJsonlFile = async (filePath: string, allEntries: LogEntry[]): Promise<void> => {
@@ -119,15 +197,24 @@ app.on('window-all-closed', () => {
 ipcMain.handle('scan-claude-projects', async (): Promise<ProjectInfo[]> => {
   try {
     const projectsDir = path.join(os.homedir(), '.claude', 'projects');
+    const cacheKey = 'projects:list';
     
     // Check if directory exists
+    let dirStat: any;
     try {
-      await fs.access(projectsDir);
+      dirStat = await fs.stat(projectsDir);
     } catch {
       console.log('Claude projects directory not found:', projectsDir);
       return [];
     }
 
+    // Check cache first
+    const cached = getFromCache<ProjectInfo[]>(cacheKey, dirStat.mtimeMs);
+    if (cached) {
+      return cached;
+    }
+
+    console.log('Scanning Claude projects directory...');
     const entries = await fs.readdir(projectsDir, { withFileTypes: true });
     const projects: ProjectInfo[] = [];
 
@@ -149,7 +236,12 @@ ipcMain.handle('scan-claude-projects', async (): Promise<ProjectInfo[]> => {
       }
     }
 
-    return projects.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+    const sortedProjects = projects.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
+    
+    // Cache the results
+    setToCache(cacheKey, sortedProjects, dirStat.mtimeMs);
+    
+    return sortedProjects;
   } catch (error) {
     console.error('Failed to scan Claude projects:', error);
     throw new Error(`Failed to scan projects: ${error}`);
@@ -158,22 +250,38 @@ ipcMain.handle('scan-claude-projects', async (): Promise<ProjectInfo[]> => {
 
 ipcMain.handle('read-project-logs', async (_, projectPath: string): Promise<LogEntry[]> => {
   try {
+    const cacheKey = `logs:${projectPath}`;
+    
+    // Get the most recent modification time from all JSONL files
     const files = await fs.readdir(projectPath);
     const jsonlFiles = files.filter(file => file.endsWith('.jsonl'));
-    const allEntries: LogEntry[] = [];
+    
+    if (jsonlFiles.length === 0) {
+      console.log(`No JSONL files found in ${path.basename(projectPath)}`);
+      return [];
+    }
 
-    // Sort files by size to process largest first (better progress indication)
+    // Find the most recent modification time among all JSONL files
+    let latestModTime = 0;
     const filesWithStats = await Promise.all(
       jsonlFiles.map(async (file) => {
         const filePath = path.join(projectPath, file);
         const stats = await fs.stat(filePath);
-        return { file, filePath, size: stats.size };
+        latestModTime = Math.max(latestModTime, stats.mtimeMs);
+        return { file, filePath, size: stats.size, modTime: stats.mtimeMs };
       })
     );
+
+    // Check cache first
+    const cached = getFromCache<LogEntry[]>(cacheKey, latestModTime);
+    if (cached) {
+      return cached;
+    }
+
+    console.log(`Processing ${filesWithStats.length} JSONL files in ${path.basename(projectPath)}`);
+    const allEntries: LogEntry[] = [];
     
     const sortedFiles = filesWithStats.sort((a, b) => b.size - a.size);
-    
-    console.log(`Processing ${sortedFiles.length} JSONL files in ${path.basename(projectPath)}`);
 
     // Process files with memory-efficient streaming for large files
     for (const { file, filePath, size } of sortedFiles) {
@@ -199,8 +307,13 @@ ipcMain.handle('read-project-logs', async (_, projectPath: string): Promise<LogE
       }
     }
 
-    console.log(`Loaded ${allEntries.length} total log entries from ${path.basename(projectPath)}`);
-    return allEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const sortedEntries = allEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    
+    // Cache the results
+    setToCache(cacheKey, sortedEntries, latestModTime);
+    
+    console.log(`Loaded ${sortedEntries.length} total log entries from ${path.basename(projectPath)}`);
+    return sortedEntries;
   } catch (error) {
     console.error('Failed to read project logs:', error);
     throw new Error(`Failed to read logs: ${error}`);
@@ -229,6 +342,10 @@ const startFileWatcher = () => {
       .on('add', (filePath) => {
         if (filePath.endsWith('.jsonl') && mainWindow) {
           console.log('New JSONL file detected:', filePath);
+          // Clear related cache
+          clearCachePattern(path.dirname(filePath));
+          clearCachePattern('projects:list');
+          
           mainWindow.webContents.send('file-system-change', {
             type: 'file-added',
             path: filePath,
@@ -239,6 +356,9 @@ const startFileWatcher = () => {
       .on('change', (filePath) => {
         if (filePath.endsWith('.jsonl') && mainWindow) {
           console.log('JSONL file changed:', filePath);
+          // Clear related cache
+          clearCachePattern(path.dirname(filePath));
+          
           mainWindow.webContents.send('file-system-change', {
             type: 'file-changed',
             path: filePath,
@@ -249,6 +369,10 @@ const startFileWatcher = () => {
       .on('unlink', (filePath) => {
         if (filePath.endsWith('.jsonl') && mainWindow) {
           console.log('JSONL file removed:', filePath);
+          // Clear related cache
+          clearCachePattern(path.dirname(filePath));
+          clearCachePattern('projects:list');
+          
           mainWindow.webContents.send('file-system-change', {
             type: 'file-removed',
             path: filePath,
@@ -260,6 +384,9 @@ const startFileWatcher = () => {
         // New project directory added
         if (mainWindow && dirPath !== projectsDir) {
           console.log('New project directory detected:', dirPath);
+          // Clear project list cache
+          clearCachePattern('projects:list');
+          
           mainWindow.webContents.send('file-system-change', {
             type: 'project-added',
             path: dirPath,
@@ -271,6 +398,10 @@ const startFileWatcher = () => {
         // Project directory removed
         if (mainWindow && dirPath !== projectsDir) {
           console.log('Project directory removed:', dirPath);
+          // Clear related cache
+          clearCachePattern(dirPath);
+          clearCachePattern('projects:list');
+          
           mainWindow.webContents.send('file-system-change', {
             type: 'project-removed',
             path: dirPath,
@@ -306,6 +437,33 @@ ipcMain.handle('start-file-watcher', async () => {
 ipcMain.handle('stop-file-watcher', async () => {
   stopFileWatcher();
   return true;
+});
+
+// Show directory dialog
+ipcMain.handle('show-directory-dialog', async () => {
+  if (!mainWindow) return null;
+  
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'プロジェクトディレクトリを選択',
+    defaultPath: path.join(os.homedir(), '.claude', 'projects'),
+  });
+  
+  return result.canceled ? null : result.filePaths[0];
+});
+
+// Validate project path
+ipcMain.handle('validate-project-path', async (_, projectPath: string) => {
+  try {
+    const resolvedPath = path.resolve(projectPath.replace(/^~/, os.homedir()));
+    await fs.access(resolvedPath);
+    
+    // Check if it's a directory
+    const stat = await fs.stat(resolvedPath);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
 });
 
 // Handle app protocol for deep linking (optional)

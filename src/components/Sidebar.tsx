@@ -22,7 +22,7 @@ export const Sidebar = () => {
   } = useAppStore();
 
   // Set up file system watcher for auto-refresh
-  const { refreshProjects, isElectron } = useFileSystemWatcher();
+  useFileSystemWatcher();
 
   useEffect(() => {
     // Load projects on component mount

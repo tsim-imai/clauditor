@@ -20,6 +20,7 @@ export interface DailyStats {
 export interface AppSettings {
   exchangeRate: number;
   darkMode: boolean;
+  customProjectPath: string;
 }
 
 export interface ProjectInfo {

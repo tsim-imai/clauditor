@@ -15,6 +15,7 @@ interface AppState {
   setProjects: (projects: ProjectInfo[]) => void;
   setSelectedProject: (projectName: string | null) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
+  setSettings: (settings: AppSettings) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: AppError | null) => void;
   clearError: () => void;
@@ -30,6 +31,7 @@ export const useAppStore = create<AppState>((set) => ({
   settings: {
     exchangeRate: 150,
     darkMode: false,
+    customProjectPath: '',
   },
   setLogEntries: (entries) => set({ logEntries: entries }),
   setDailyStats: (stats) => set({ dailyStats: stats }),
@@ -39,6 +41,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       settings: { ...state.settings, ...newSettings },
     })),
+  setSettings: (settings) => set({ settings }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   clearError: () => set({ error: null }),

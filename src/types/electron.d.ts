@@ -17,6 +17,8 @@ declare global {
       stopFileWatcher: () => Promise<boolean>;
       onFileSystemChange: (callback: (event: FileSystemChangeEvent) => void) => void;
       removeFileSystemChangeListener: () => void;
+      showDirectoryDialog: () => Promise<string | null>;
+      validateProjectPath: (path: string) => Promise<boolean>;
     };
   }
 }

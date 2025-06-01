@@ -1,11 +1,13 @@
 // Enhanced logging utility for debugging and monitoring
 
-export enum LogLevel {
-  DEBUG = 0,
-  INFO = 1,
-  WARN = 2,
-  ERROR = 3,
-}
+export const LogLevel = {
+  DEBUG: 0,
+  INFO: 1,
+  WARN: 2,
+  ERROR: 3,
+} as const;
+
+export type LogLevel = typeof LogLevel[keyof typeof LogLevel];
 
 interface LogEntry {
   timestamp: string;
@@ -45,7 +47,7 @@ class Logger {
 
     // Console output
     if (level >= this.currentLevel) {
-      const levelName = LogLevel[level];
+      const levelName = Object.keys(LogLevel).find(key => LogLevel[key as keyof typeof LogLevel] === level) || 'UNKNOWN';
       const prefix = `[${timestamp}] [${levelName}]`;
       
       switch (level) {
@@ -105,7 +107,7 @@ class Logger {
   // Set log level
   setLevel(level: LogLevel) {
     this.currentLevel = level;
-    this.info('Log level changed', { level: LogLevel[level] });
+    this.info('Log level changed', { level: Object.keys(LogLevel).find(key => LogLevel[key as keyof typeof LogLevel] === level) || 'UNKNOWN' });
   }
 
   // Clear logs

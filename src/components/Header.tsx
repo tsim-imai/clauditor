@@ -1,19 +1,11 @@
 import { Settings, Moon, Sun } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 import { useState } from 'react';
+import { SettingsModal } from './SettingsModal';
 
 export const Header = () => {
   const { settings, updateSettings } = useAppStore();
   const [showSettings, setShowSettings] = useState(false);
-  const [tempRate, setTempRate] = useState(settings.exchangeRate.toString());
-
-  const handleSaveSettings = () => {
-    const rate = parseFloat(tempRate);
-    if (!isNaN(rate) && rate > 0) {
-      updateSettings({ exchangeRate: rate });
-      setShowSettings(false);
-    }
-  };
 
   const toggleDarkMode = () => {
     updateSettings({ darkMode: !settings.darkMode });
@@ -55,43 +47,10 @@ export const Header = () => {
         </div>
       </div>
 
-      {showSettings && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-              設定
-            </h3>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                為替レート (円/USD)
-              </label>
-              <input
-                type="number"
-                value={tempRate}
-                onChange={(e) => setTempRate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="150"
-              />
-            </div>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowSettings(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-600 rounded-md hover:bg-gray-200 dark:hover:bg-gray-500"
-              >
-                キャンセル
-              </button>
-              <button
-                onClick={handleSaveSettings}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-              >
-                保存
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsModal 
+        isOpen={showSettings} 
+        onClose={() => setShowSettings(false)} 
+      />
     </header>
   );
 };

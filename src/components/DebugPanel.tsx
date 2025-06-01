@@ -5,7 +5,7 @@ import { logger, LogLevel } from '../utils/logger';
 export const DebugPanel = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
-  const [logLevel, setLogLevel] = useState(LogLevel.INFO);
+  const [logLevel, setLogLevel] = useState<LogLevel>(LogLevel.INFO);
 
   // Only show in development mode
   if (!import.meta.env.DEV) {
@@ -142,7 +142,7 @@ export const DebugPanel = () => {
                   {formatTimestamp(log.timestamp)}
                 </span>
                 <span className={`font-medium ${getLevelColor(log.level)}`}>
-                  {LogLevel[log.level]}
+                  {Object.keys(LogLevel).find(key => LogLevel[key as keyof typeof LogLevel] === log.level) || 'UNKNOWN'}
                 </span>
               </div>
               <div className="text-gray-900 dark:text-white mb-1">
