@@ -21,3 +21,10 @@ export interface AppSettings {
   exchangeRate: number;
   darkMode: boolean;
 }
+
+export interface ProjectInfo {
+  name: string;
+  path: string;
+  logFiles: string[];
+  lastModified: Date;
+}
