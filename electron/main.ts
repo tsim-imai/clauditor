@@ -6,10 +6,33 @@ import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import chokidar from 'chokidar';
-import { ProjectInfo, LogEntry } from '../src/types';
+// Type definitions
+interface ProjectInfo {
+  name: string;
+  path: string;
+  hasLogs: boolean;
+}
 
-const isDev = process.env.NODE_ENV === 'development';
+interface LogEntry {
+  timestamp: string;
+  message?: {
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+    };
+  };
+  costUSD?: number;
+}
+
+// より確実な開発環境判定: app.isPackaged を使用
+const isDev = !app.isPackaged;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// 起動時ログ
+console.log('Clauditor starting...');
+console.log('isDev:', isDev);
+console.log('app.isPackaged:', app.isPackaged);
+console.log('__dirname:', __dirname);
 
 let mainWindow: BrowserWindow | null = null;
 let fileWatcher: chokidar.FSWatcher | null = null;
@@ -158,13 +181,21 @@ const createWindow = (): void => {
   });
 
   // Load the app
+  const htmlPath = isDev 
+    ? path.join(__dirname, '../public/index.html')
+    : path.join(__dirname, '../dist/index.html');
+    
+  console.log('Loading HTML from:', htmlPath);
+  console.log('isDev:', isDev);
+  console.log('app.isPackaged:', app.isPackaged);
+  console.log('__dirname:', __dirname);
+  
+  mainWindow.loadFile(htmlPath);
+  
+  // 開発時のみDevToolsを自動で開く
   if (isDev) {
-    // 開発時も静的ファイルを使用
-    mainWindow.loadFile(path.join(__dirname, '../public/index.html'));
     // DevToolsは手動で開く（Cmd+Opt+I or F12）
     // mainWindow.webContents.openDevTools();
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../public/index.html'));
   }
 
   // Show window when ready

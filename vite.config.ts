@@ -14,6 +14,11 @@ export default defineConfig({
           // Notify the Renderer process to reload the page when the Preload script build is complete
           options.reload()
         },
+        vite: {
+          build: {
+            outDir: '../dist-electron',
+          },
+        },
       },
       {
         // Preload script
@@ -23,6 +28,7 @@ export default defineConfig({
         },
         vite: {
           build: {
+            outDir: '../dist-electron',
             rollupOptions: {
               output: {
                 format: 'cjs',
