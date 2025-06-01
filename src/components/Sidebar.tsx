@@ -1,7 +1,7 @@
 import { Folder, FileText, Calendar } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 import { aggregateByDate } from '../utils/dataAggregator';
-import { scanClaudeProjects, readProjectLogs } from '../utils/electronFileSystem';
+import { scanClaudeProjects, getProjectEntries } from '../utils/hybridFileSystem';
 import { useEffect } from 'react';
 import { useFileSystemWatcher } from '../hooks/useFileSystemWatcher';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -31,7 +31,11 @@ export const Sidebar = () => {
       clearError();
       
       try {
-        const projectList = await scanClaudeProjects();
+        const projectList = await scanClaudeProjects({
+          useBackendService: settings.useBackendService,
+          backendServiceUrl: settings.backendServiceUrl,
+          customProjectPath: settings.customProjectPath,
+        });
         setProjects(projectList);
       } catch (error: any) {
         console.error('Failed to load projects:', error);
@@ -46,7 +50,7 @@ export const Sidebar = () => {
     };
     
     loadProjects();
-  }, [setProjects, setLoading, setError, clearError]);
+  }, [setProjects, setLoading, setError, clearError, settings.useBackendService, settings.backendServiceUrl, settings.customProjectPath]);
 
   const handleProjectSelect = async (projectName: string) => {
     setSelectedProject(projectName);
@@ -60,7 +64,11 @@ export const Sidebar = () => {
     }
 
     try {
-      const entries = await readProjectLogs(project.path);
+      const entries = await getProjectEntries(project, {
+        useBackendService: settings.useBackendService,
+        backendServiceUrl: settings.backendServiceUrl,
+        customProjectPath: settings.customProjectPath,
+      });
       const stats = aggregateByDate(entries, settings.exchangeRate);
       
       setLogEntries(entries);
