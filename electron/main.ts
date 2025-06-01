@@ -176,7 +176,8 @@ const createWindow = (): void => {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
-    titleBarStyle: 'hiddenInset', // macOS native title bar
+    titleBarStyle: 'default', // macOS default title bar for dragging
+    title: 'Clauditor - Claude Code 使用状況ダッシュボード',
     show: false, // Don't show until ready
   });
 
