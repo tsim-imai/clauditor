@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clauditor - Claude Code 使用状況ダッシュボード</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -16,10 +17,10 @@
             </div>
             <div class="header-right">
                 <button id="darkModeToggle" class="icon-button" title="ダークモード切り替え">
-                    <span id="darkModeIcon">🌙</span>
+                    <i class="material-icons" id="darkModeIcon">dark_mode</i>
                 </button>
                 <button id="settingsButton" class="icon-button" title="設定">
-                    <span>⚙️</span>
+                    <i class="material-icons">settings</i>
                 </button>
             </div>
         </div>
@@ -30,7 +31,7 @@
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h2>プロジェクト</h2>
-                <button id="refreshButton" class="icon-button small">🔄</button>
+                <button id="refreshButton" class="icon-button small"><i class="material-icons">refresh</i></button>
             </div>
             <div class="project-list" id="projectList">
                 <div class="loading">プロジェクトを読み込み中...</div>
@@ -50,35 +51,50 @@
             </div>
 
             <div id="mainDashboard" class="dashboard hidden">
-                <!-- 統計カード -->
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <h3>総トークン使用量</h3>
-                        <div class="stat-value" id="totalTokens">-</div>
+                <!-- 統計セクション -->
+                <div class="section-header">
+                    <h2>
+                        <i class="material-icons" id="statsIcon">analytics</i> 
+                        <span id="statsTitle">全プロジェクト統計</span>
+                    </h2>
+                    <div class="header-actions">
+                        <button id="backToAllProjectsButton" class="button secondary hidden">
+                            <i class="material-icons">arrow_back</i> 全プロジェクトに戻る
+                        </button>
                     </div>
-                    <div class="stat-card">
-                        <h3>総コスト (USD)</h3>
-                        <div class="stat-value" id="totalCostUSD">-</div>
+                </div>
+                <div class="stats-grid" id="mainStatsGrid">
+                    <div class="stat-card" id="statCard1">
+                        <h3><i class="material-icons">token</i> 総トークン使用量</h3>
+                        <div class="stat-value" id="statValue1">-</div>
+                        <div class="stat-projects" id="statProjects1">-</div>
                     </div>
-                    <div class="stat-card">
-                        <h3>総コスト (JPY)</h3>
-                        <div class="stat-value" id="totalCostJPY">-</div>
+                    <div class="stat-card" id="statCard2">
+                        <h3><i class="material-icons">attach_money</i> 総コスト (USD)</h3>
+                        <div class="stat-value" id="statValue2">-</div>
+                        <div class="stat-projects" id="statProjects2">-</div>
                     </div>
-                    <div class="stat-card">
-                        <h3>API呼び出し回数</h3>
-                        <div class="stat-value" id="totalCalls">-</div>
+                    <div class="stat-card" id="statCard3">
+                        <h3><i class="material-icons">currency_yen</i> 総コスト (JPY)</h3>
+                        <div class="stat-value" id="statValue3">-</div>
+                        <div class="stat-projects" id="statProjects3">-</div>
+                    </div>
+                    <div class="stat-card" id="statCard4">
+                        <h3><i class="material-icons">api</i> API呼び出し回数</h3>
+                        <div class="stat-value" id="statValue4">-</div>
+                        <div class="stat-projects" id="statProjects4">-</div>
                     </div>
                 </div>
 
                 <!-- チャートエリア -->
                 <div class="chart-container">
-                    <h3>日別使用量</h3>
+                    <h3><i class="material-icons">show_chart</i> 日別使用量</h3>
                     <canvas id="usageChart" width="800" height="400"></canvas>
                 </div>
 
                 <!-- データテーブル -->
                 <div class="table-container">
-                    <h3>詳細データ</h3>
+                    <h3><i class="material-icons">table_chart</i> 詳細データ</h3>
                     <table id="dataTable" class="data-table">
                         <thead>
                             <tr>
@@ -104,7 +120,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2>設定</h2>
-                <button id="closeSettings" class="close-button">×</button>
+                <button id="closeSettings" class="close-button"><i class="material-icons">close</i></button>
             </div>
             <div class="modal-body">
                 <div class="setting-group">
@@ -115,7 +131,7 @@
                     <label for="customPath">カスタムプロジェクトパス:</label>
                     <div class="path-input-group">
                         <input type="text" id="customPath" placeholder="~/.claude/projects">
-                        <button id="browseButton" class="button secondary">参照</button>
+                        <button id="browseButton" class="button secondary"><i class="material-icons">folder_open</i> 参照</button>
                     </div>
                 </div>
                 <div class="setting-group">
@@ -135,7 +151,7 @@
     <!-- エラートースト -->
     <div id="errorToast" class="toast error hidden">
         <span id="errorMessage"></span>
-        <button id="dismissError" class="dismiss-button">×</button>
+        <button id="dismissError" class="dismiss-button"><i class="material-icons">close</i></button>
     </div>
 
     <script src="app.js"></script>

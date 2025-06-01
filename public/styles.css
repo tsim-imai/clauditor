@@ -85,6 +85,12 @@ body {
     gap: 0.5rem;
 }
 
+/* Material Icons */
+.material-icons {
+    font-size: inherit;
+    vertical-align: middle;
+}
+
 /* ボタン */
 .icon-button {
     background: none;
@@ -95,6 +101,9 @@ body {
     transition: background-color 0.2s ease;
     color: var(--text-secondary);
     font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .icon-button:hover {
@@ -114,6 +123,9 @@ body {
     font-size: 0.9rem;
     transition: all 0.2s ease;
     font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .button.primary {
@@ -250,6 +262,28 @@ body {
     gap: 1.5rem;
 }
 
+/* セクションヘッダー */
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.section-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.header-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -270,12 +304,36 @@ body {
     font-weight: 500;
     color: var(--text-secondary);
     margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .stat-value {
     font-size: 1.8rem;
     font-weight: 700;
     color: var(--accent-color);
+}
+
+/* グローバル統計カード */
+.stat-card.global {
+    background: linear-gradient(135deg, var(--accent-color), var(--success-color));
+    color: white;
+    border: none;
+}
+
+.stat-card.global h3 {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.stat-card.global .stat-value {
+    color: white;
+}
+
+.stat-projects {
+    font-size: 0.8rem;
+    opacity: 0.8;
+    margin-top: 0.25rem;
 }
 
 /* チャートコンテナ */
@@ -290,6 +348,9 @@ body {
 .chart-container h3 {
     margin-bottom: 1rem;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 /* テーブル */
@@ -305,6 +366,9 @@ body {
 .table-container h3 {
     margin-bottom: 1rem;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .data-table {

@@ -5,6 +5,14 @@ class AppState {
         this.selectedProject = null;
         this.logEntries = [];
         this.dailyStats = [];
+        this.globalStats = {
+            totalTokens: 0,
+            costUSD: 0,
+            costJPY: 0,
+            calls: 0,
+            projectCount: 0
+        };
+        this.allProjectsData = new Map();
         this.settings = {
             exchangeRate: 150,
             darkMode: false,
@@ -42,7 +50,7 @@ class AppState {
         
         const darkModeIcon = document.getElementById('darkModeIcon');
         if (darkModeIcon) {
-            darkModeIcon.textContent = this.settings.darkMode ? '☀️' : '🌙';
+            darkModeIcon.textContent = this.settings.darkMode ? 'light_mode' : 'dark_mode';
         }
         
         const darkModeCheckbox = document.getElementById('darkModeCheckbox');
@@ -116,6 +124,11 @@ class AppState {
             this.refreshProjects();
         });
 
+        // 全プロジェクトに戻るボタン
+        document.getElementById('backToAllProjectsButton').addEventListener('click', () => {
+            this.showAllProjectsView();
+        });
+
         // パス参照ボタン
         document.getElementById('browseButton').addEventListener('click', async () => {
             try {
@@ -140,12 +153,59 @@ class AppState {
         try {
             this.projects = await window.electronAPI.scanClaudeProjects();
             this.renderProjects();
+            await this.loadAllProjectsData();
         } catch (error) {
             console.error('Failed to scan projects:', error);
             this.showError('プロジェクトの読み込みに失敗しました: ' + error.message);
         } finally {
             this.setLoading(false);
         }
+    }
+
+    // 全プロジェクトのデータを読み込み
+    async loadAllProjectsData() {
+        let totalTokens = 0;
+        let totalCostUSD = 0;
+        let totalCalls = 0;
+        let projectCount = 0;
+
+        for (const project of this.projects) {
+            try {
+                const logEntries = await window.electronAPI.readProjectLogs(project.path);
+                this.allProjectsData.set(project.name, logEntries);
+                
+                const projectStats = this.calculateProjectStats(logEntries);
+                totalTokens += projectStats.totalTokens;
+                totalCostUSD += projectStats.costUSD;
+                totalCalls += projectStats.calls;
+                projectCount++;
+            } catch (error) {
+                console.warn(`Failed to load data for project ${project.name}:`, error);
+            }
+        }
+
+        this.globalStats = {
+            totalTokens,
+            costUSD: totalCostUSD,
+            costJPY: totalCostUSD * this.settings.exchangeRate,
+            calls: totalCalls,
+            projectCount
+        };
+
+        // デフォルトで全プロジェクト統計を表示
+        this.showAllProjectsView();
+    }
+
+    // プロジェクトの統計を計算
+    calculateProjectStats(logEntries) {
+        return logEntries.reduce((acc, entry) => {
+            if (entry.message && entry.message.usage) {
+                acc.totalTokens += (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
+            }
+            acc.costUSD += entry.costUSD || 0;
+            acc.calls += 1;
+            return acc;
+        }, { totalTokens: 0, costUSD: 0, calls: 0 });
     }
 
     // プロジェクトを選択
@@ -157,15 +217,88 @@ class AppState {
         this.updateUI();
 
         try {
-            this.logEntries = await window.electronAPI.readProjectLogs(project.path);
+            // キャッシュからデータを取得するか、新たに読み込み
+            if (this.allProjectsData.has(project.name)) {
+                this.logEntries = this.allProjectsData.get(project.name);
+            } else {
+                this.logEntries = await window.electronAPI.readProjectLogs(project.path);
+                this.allProjectsData.set(project.name, this.logEntries);
+            }
+            
             this.processLogEntries();
-            this.renderDashboard();
+            this.showProjectStats(project.name);
+            this.renderProjects(); // アクティブ状態を更新
         } catch (error) {
             console.error('Failed to read project logs:', error);
             this.showError('プロジェクトデータの読み込みに失敗しました: ' + error.message);
         } finally {
             this.setLoading(false);
         }
+    }
+
+    // 全プロジェクト表示
+    showAllProjectsView() {
+        this.selectedProject = 'all';
+        this.combineAllProjectsData();
+        
+        // 統計表示を全プロジェクト用に切り替え
+        this.updateStatsDisplay(true);
+        this.renderGlobalStats();
+        this.renderChart();
+        this.renderTable();
+        
+        // プロジェクト一覧のアクティブ状態をクリア
+        this.renderProjects();
+    }
+
+    // 個別プロジェクト統計表示
+    showProjectStats(projectName) {
+        // 統計表示を個別プロジェクト用に切り替え
+        this.updateStatsDisplay(false, projectName);
+        this.renderProjectStats();
+        this.renderChart();
+        this.renderTable();
+    }
+
+    // 統計表示の切り替え
+    updateStatsDisplay(isGlobal, projectName = '') {
+        const statsIcon = document.getElementById('statsIcon');
+        const statsTitle = document.getElementById('statsTitle');
+        const backButton = document.getElementById('backToAllProjectsButton');
+        const statCards = document.querySelectorAll('#mainStatsGrid .stat-card');
+
+        if (isGlobal) {
+            // 全プロジェクト表示
+            statsIcon.textContent = 'analytics';
+            statsTitle.textContent = '全プロジェクト統計';
+            backButton.classList.add('hidden');
+            
+            // カードにグローバルスタイルを適用
+            statCards.forEach(card => {
+                card.classList.add('global');
+            });
+        } else {
+            // 個別プロジェクト表示
+            statsIcon.textContent = 'folder';
+            statsTitle.textContent = `${projectName} 統計`;
+            backButton.classList.remove('hidden');
+            
+            // カードからグローバルスタイルを除去
+            statCards.forEach(card => {
+                card.classList.remove('global');
+            });
+        }
+    }
+
+    // 全プロジェクトのデータを結合
+    combineAllProjectsData() {
+        this.logEntries = [];
+        for (const [projectName, logEntries] of this.allProjectsData) {
+            this.logEntries.push(...logEntries);
+        }
+        // 時系列でソート
+        this.logEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        this.processLogEntries();
     }
 
     // ログエントリを処理して日別統計を生成
@@ -249,10 +382,15 @@ class AppState {
         this.saveSettings();
         this.hideSettingsModal();
         
+        // グローバル統計のJPY換算を更新
+        this.globalStats.costJPY = this.globalStats.costUSD * this.settings.exchangeRate;
+        
         // データを再計算
         if (this.logEntries.length > 0) {
             this.processLogEntries();
             this.renderDashboard();
+        } else {
+            this.renderGlobalStats();
         }
     }
 
@@ -269,7 +407,10 @@ class AppState {
 
         if (this.loading && this.selectedProject) {
             loadingMessage.classList.remove('hidden');
-        } else if (this.selectedProject && this.logEntries.length > 0) {
+        } else if (this.selectedProject === 'all' || (this.selectedProject && this.logEntries.length > 0)) {
+            mainDashboard.classList.remove('hidden');
+        } else if (this.globalStats.projectCount > 0) {
+            // プロジェクトが読み込まれている場合は全プロジェクト統計を表示
             mainDashboard.classList.remove('hidden');
         } else {
             welcomeMessage.classList.remove('hidden');
@@ -301,20 +442,25 @@ class AppState {
             item.addEventListener('click', () => {
                 const project = JSON.parse(item.dataset.project);
                 this.selectProject(project);
-                this.renderProjects(); // アクティブ状態を更新
             });
         });
     }
 
-    // ダッシュボードを描画
-    renderDashboard() {
-        this.renderStats();
-        this.renderChart();
-        this.renderTable();
+    // グローバル統計を描画
+    renderGlobalStats() {
+        document.getElementById('statValue1').textContent = this.globalStats.totalTokens.toLocaleString();
+        document.getElementById('statValue2').textContent = `$${this.globalStats.costUSD.toFixed(2)}`;
+        document.getElementById('statValue3').textContent = `¥${Math.round(this.globalStats.costJPY).toLocaleString()}`;
+        document.getElementById('statValue4').textContent = this.globalStats.calls.toLocaleString();
+        
+        document.getElementById('statProjects1').textContent = `${this.globalStats.projectCount} プロジェクト`;
+        document.getElementById('statProjects2').textContent = `${this.globalStats.projectCount} プロジェクト`;
+        document.getElementById('statProjects3').textContent = `${this.globalStats.projectCount} プロジェクト`;
+        document.getElementById('statProjects4').textContent = `${this.globalStats.projectCount} プロジェクト`;
     }
 
-    // 統計を描画
-    renderStats() {
+    // 個別プロジェクト統計を描画
+    renderProjectStats() {
         const totals = this.dailyStats.reduce((acc, day) => ({
             totalTokens: acc.totalTokens + day.totalTokens,
             costUSD: acc.costUSD + day.costUSD,
@@ -322,11 +468,18 @@ class AppState {
             calls: acc.calls + day.calls
         }), { totalTokens: 0, costUSD: 0, costJPY: 0, calls: 0 });
 
-        document.getElementById('totalTokens').textContent = totals.totalTokens.toLocaleString();
-        document.getElementById('totalCostUSD').textContent = `$${totals.costUSD.toFixed(2)}`;
-        document.getElementById('totalCostJPY').textContent = `¥${Math.round(totals.costJPY).toLocaleString()}`;
-        document.getElementById('totalCalls').textContent = totals.calls.toLocaleString();
+        document.getElementById('statValue1').textContent = totals.totalTokens.toLocaleString();
+        document.getElementById('statValue2').textContent = `$${totals.costUSD.toFixed(2)}`;
+        document.getElementById('statValue3').textContent = `¥${Math.round(totals.costJPY).toLocaleString()}`;
+        document.getElementById('statValue4').textContent = totals.calls.toLocaleString();
+        
+        // プロジェクト統計では詳細情報を非表示
+        document.getElementById('statProjects1').textContent = '';
+        document.getElementById('statProjects2').textContent = '';
+        document.getElementById('statProjects3').textContent = '';
+        document.getElementById('statProjects4').textContent = '';
     }
+
 
     // チャートを描画
     renderChart() {
