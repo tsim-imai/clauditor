@@ -16,7 +16,9 @@ class AppState {
         this.settings = {
             exchangeRate: 150,
             darkMode: false,
-            customProjectPath: ''
+            customProjectPath: '',
+            lastRateUpdate: null,
+            rateSource: 'manual'
         };
         this.loading = false;
         this.error = null;
@@ -145,6 +147,11 @@ class AppState {
         document.getElementById('dismissError').addEventListener('click', () => {
             this.hideError();
         });
+
+        // 為替レート取得ボタン
+        document.getElementById('fetchRateButton').addEventListener('click', () => {
+            this.fetchCurrentExchangeRate();
+        });
     }
 
     // プロジェクト一覧を更新
@@ -154,6 +161,9 @@ class AppState {
             this.projects = await window.electronAPI.scanClaudeProjects();
             this.renderProjects();
             await this.loadAllProjectsData();
+            
+            // 初回起動時または24時間以上経過している場合は自動で為替レートを取得
+            await this.autoFetchExchangeRateIfNeeded();
         } catch (error) {
             console.error('Failed to scan projects:', error);
             this.showError('プロジェクトの読み込みに失敗しました: ' + error.message);
@@ -365,6 +375,7 @@ class AppState {
         document.getElementById('exchangeRate').value = this.settings.exchangeRate;
         document.getElementById('customPath').value = this.settings.customProjectPath;
         document.getElementById('darkModeCheckbox').checked = this.settings.darkMode;
+        this.updateExchangeRateInfo();
         document.getElementById('settingsModal').classList.remove('hidden');
     }
 
@@ -375,7 +386,16 @@ class AppState {
 
     // モーダルから設定を保存
     saveSettingsFromModal() {
-        this.settings.exchangeRate = parseFloat(document.getElementById('exchangeRate').value) || 150;
+        const oldRate = this.settings.exchangeRate;
+        const newRate = parseFloat(document.getElementById('exchangeRate').value) || 150;
+        
+        // 手動で変更された場合は手動設定として記録
+        if (newRate !== oldRate && this.settings.rateSource !== 'manual_override') {
+            this.settings.rateSource = 'manual';
+            this.settings.lastRateUpdate = Date.now();
+        }
+        
+        this.settings.exchangeRate = newRate;
         this.settings.customProjectPath = document.getElementById('customPath').value;
         this.settings.darkMode = document.getElementById('darkModeCheckbox').checked;
         
@@ -392,6 +412,138 @@ class AppState {
         } else {
             this.renderGlobalStats();
         }
+    }
+
+    // 為替レート情報を更新
+    updateExchangeRateInfo() {
+        const info = document.getElementById('exchangeRateInfo');
+        const lastUpdate = this.settings.lastRateUpdate;
+        
+        if (this.settings.rateSource === 'manual') {
+            info.textContent = '手動設定';
+            info.className = 'rate-info';
+        } else if (lastUpdate) {
+            const updateDate = new Date(lastUpdate);
+            const timeAgo = this.getTimeAgo(updateDate);
+            info.textContent = `API取得 (${this.settings.rateSource}) - ${timeAgo}`;
+            info.className = 'rate-info success';
+        } else {
+            info.textContent = 'デフォルト値';
+            info.className = 'rate-info';
+        }
+    }
+
+    // 時間差を取得
+    getTimeAgo(date) {
+        const now = new Date();
+        const diffMs = now - date;
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+        
+        if (diffHours > 24) {
+            return `${Math.floor(diffHours / 24)}日前`;
+        } else if (diffHours > 0) {
+            return `${diffHours}時間前`;
+        } else if (diffMinutes > 0) {
+            return `${diffMinutes}分前`;
+        } else {
+            return '今';
+        }
+    }
+
+    // 自動で為替レートを取得（24時間毎）
+    async autoFetchExchangeRateIfNeeded() {
+        const lastUpdate = this.settings.lastRateUpdate;
+        const now = Date.now();
+        const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+        
+        // 初回起動または24時間以上経過している場合
+        if (!lastUpdate || (now - lastUpdate) > TWENTY_FOUR_HOURS) {
+            try {
+                await this.fetchCurrentExchangeRate(true); // サイレント更新
+            } catch (error) {
+                console.log('Auto fetch exchange rate failed, using current rate:', error);
+            }
+        }
+    }
+
+    // 現在の為替レートを取得
+    async fetchCurrentExchangeRate(silent = false) {
+        if (!window.electronAPI || !window.electronAPI.fetchExchangeRate) {
+            this.showError('為替レートAPIが利用できません');
+            return;
+        }
+
+        const button = document.getElementById('fetchRateButton');
+        const originalText = button.innerHTML;
+        
+        if (!silent) {
+            button.innerHTML = '<i class="material-icons">sync</i> 取得中...';
+            button.disabled = true;
+        }
+
+        try {
+            const result = await window.electronAPI.fetchExchangeRate();
+            
+            if (result.success) {
+                this.settings.exchangeRate = Math.round(result.rate * 100) / 100; // 小数点2桁に丸める
+                this.settings.lastRateUpdate = result.timestamp;
+                this.settings.rateSource = result.source;
+                
+                this.saveSettings();
+                
+                // UIを更新
+                document.getElementById('exchangeRate').value = this.settings.exchangeRate;
+                this.updateExchangeRateInfo();
+                
+                // 統計を再計算
+                this.globalStats.costJPY = this.globalStats.costUSD * this.settings.exchangeRate;
+                if (this.logEntries.length > 0) {
+                    this.processLogEntries();
+                    this.renderDashboard();
+                } else {
+                    this.renderGlobalStats();
+                }
+                
+                if (!silent) {
+                    this.showSuccess(`為替レートを更新しました: ${this.settings.exchangeRate} JPY/USD`);
+                }
+            } else {
+                if (!silent) {
+                    this.showError(`為替レート取得に失敗しました: ${result.error}`);
+                }
+                console.error('Exchange rate fetch failed:', result);
+            }
+        } catch (error) {
+            if (!silent) {
+                this.showError('為替レート取得中にエラーが発生しました');
+            }
+            console.error('Failed to fetch exchange rate:', error);
+        } finally {
+            if (!silent) {
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }
+        }
+    }
+
+    // 成功メッセージを表示
+    showSuccess(message) {
+        // エラートーストを成功メッセージ用に一時的に使用
+        const toast = document.getElementById('errorToast');
+        const messageEl = document.getElementById('errorMessage');
+        
+        messageEl.textContent = message;
+        toast.className = 'toast success';
+        toast.classList.remove('hidden');
+        
+        setTimeout(() => {
+            toast.classList.add('hidden');
+            // クラスを元に戻す
+            setTimeout(() => {
+                toast.className = 'toast error hidden';
+            }, 300);
+        }, 3000);
     }
 
     // UIを更新

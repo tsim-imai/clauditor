@@ -485,6 +485,33 @@ body {
     flex: 1;
 }
 
+.exchange-rate-group {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.exchange-rate-group input {
+    flex: 1;
+}
+
+.exchange-rate-info {
+    margin-top: 0.25rem;
+}
+
+.rate-info {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.rate-info.success {
+    color: var(--success-color);
+}
+
+.rate-info.error {
+    color: var(--error-color);
+}
+
 .setting-group input[type="checkbox"] {
     margin-right: 0.5rem;
 }
@@ -514,6 +541,11 @@ body {
 
 .toast.error {
     background-color: var(--error-color);
+    color: white;
+}
+
+.toast.success {
+    background-color: var(--success-color);
     color: white;
 }
 

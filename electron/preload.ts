@@ -42,4 +42,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Validate project path
   validateProjectPath: (path: string) =>
     ipcRenderer.invoke('validate-project-path', path),
+
+  // Fetch exchange rate
+  fetchExchangeRate: () =>
+    ipcRenderer.invoke('fetch-exchange-rate'),
 });

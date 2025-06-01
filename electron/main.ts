@@ -468,6 +468,50 @@ ipcMain.handle('validate-project-path', async (_, projectPath: string) => {
   }
 });
 
+// Fetch current exchange rate USD to JPY
+ipcMain.handle('fetch-exchange-rate', async () => {
+  try {
+    const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    
+    // Return the JPY rate
+    return {
+      success: true,
+      rate: data.rates.JPY,
+      timestamp: Date.now(),
+      source: 'exchangerate-api.com'
+    };
+  } catch (error) {
+    console.error('Failed to fetch exchange rate:', error);
+    
+    // Fallback API
+    try {
+      const fallbackResponse = await fetch('https://open.er-api.com/v6/latest/USD');
+      if (!fallbackResponse.ok) {
+        throw new Error(`Fallback API error! status: ${fallbackResponse.status}`);
+      }
+      const fallbackData = await fallbackResponse.json();
+      
+      return {
+        success: true,
+        rate: fallbackData.rates.JPY,
+        timestamp: Date.now(),
+        source: 'open.er-api.com'
+      };
+    } catch (fallbackError) {
+      console.error('Fallback API also failed:', fallbackError);
+      return {
+        success: false,
+        error: 'Failed to fetch exchange rate from all sources',
+        fallbackRate: 150 // デフォルト値
+      };
+    }
+  }
+});
+
 // Handle app protocol for deep linking (optional)
 if (isDev) {
   app.setAsDefaultProtocolClient('clauditor-dev');
