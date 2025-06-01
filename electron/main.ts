@@ -159,11 +159,12 @@ const createWindow = (): void => {
 
   // Load the app
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    // 開発時も静的ファイルを使用
+    mainWindow.loadFile(path.join(__dirname, '../public/index.html'));
     // DevToolsは手動で開く（Cmd+Opt+I or F12）
     // mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../public/index.html'));
   }
 
   // Show window when ready

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clauditor - Claude Code 使用状況ダッシュボード</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- ヘッダー -->
+    <header class="header">
+        <div class="header-content">
+            <div class="header-left">
+                <h1 class="app-title">Clauditor</h1>
+                <span class="app-subtitle">Claude Code 使用状況ダッシュボード</span>
+            </div>
+            <div class="header-right">
+                <button id="darkModeToggle" class="icon-button" title="ダークモード切り替え">
+                    <span id="darkModeIcon">🌙</span>
+                </button>
+                <button id="settingsButton" class="icon-button" title="設定">
+                    <span>⚙️</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-layout">
+        <!-- サイドバー -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>プロジェクト</h2>
+                <button id="refreshButton" class="icon-button small">🔄</button>
+            </div>
+            <div class="project-list" id="projectList">
+                <div class="loading">プロジェクトを読み込み中...</div>
+            </div>
+        </aside>
+
+        <!-- メインコンテンツ -->
+        <main class="main-content">
+            <div id="welcomeMessage" class="welcome-card">
+                <h2>ようこそ Clauditor へ</h2>
+                <p>左側のサイドバーからプロジェクトを選択してください</p>
+            </div>
+
+            <div id="loadingMessage" class="loading-card hidden">
+                <div class="loading-spinner"></div>
+                <p>データを読み込み中...</p>
+            </div>
+
+            <div id="mainDashboard" class="dashboard hidden">
+                <!-- 統計カード -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>総トークン使用量</h3>
+                        <div class="stat-value" id="totalTokens">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>総コスト (USD)</h3>
+                        <div class="stat-value" id="totalCostUSD">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>総コスト (JPY)</h3>
+                        <div class="stat-value" id="totalCostJPY">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>API呼び出し回数</h3>
+                        <div class="stat-value" id="totalCalls">-</div>
+                    </div>
+                </div>
+
+                <!-- チャートエリア -->
+                <div class="chart-container">
+                    <h3>日別使用量</h3>
+                    <canvas id="usageChart" width="800" height="400"></canvas>
+                </div>
+
+                <!-- データテーブル -->
+                <div class="table-container">
+                    <h3>詳細データ</h3>
+                    <table id="dataTable" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>日付</th>
+                                <th>入力トークン</th>
+                                <th>出力トークン</th>
+                                <th>合計トークン</th>
+                                <th>コスト (USD)</th>
+                                <th>コスト (JPY)</th>
+                                <th>呼び出し回数</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 設定モーダル -->
+    <div id="settingsModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>設定</h2>
+                <button id="closeSettings" class="close-button">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label for="exchangeRate">為替レート (USD/JPY):</label>
+                    <input type="number" id="exchangeRate" value="150" min="1" max="1000">
+                </div>
+                <div class="setting-group">
+                    <label for="customPath">カスタムプロジェクトパス:</label>
+                    <div class="path-input-group">
+                        <input type="text" id="customPath" placeholder="~/.claude/projects">
+                        <button id="browseButton" class="button secondary">参照</button>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <label>
+                        <input type="checkbox" id="darkModeCheckbox">
+                        ダークモード
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="saveSettings" class="button primary">保存</button>
+                <button id="cancelSettings" class="button secondary">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- エラートースト -->
+    <div id="errorToast" class="toast error hidden">
+        <span id="errorMessage"></span>
+        <button id="dismissError" class="dismiss-button">×</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
