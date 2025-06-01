@@ -2,17 +2,15 @@
 class AppState {
     constructor() {
         this.projects = [];
-        this.selectedProject = null;
-        this.logEntries = [];
-        this.dailyStats = [];
-        this.globalStats = {
-            totalTokens: 0,
-            costUSD: 0,
-            costJPY: 0,
-            calls: 0,
-            projectCount: 0
-        };
+        this.allLogEntries = [];
+        this.filteredEntries = [];
+        this.currentPeriod = 'today';
+        this.charts = {};
         this.allProjectsData = new Map();
+        this.currentView = 'dashboard'; // 'dashboard' or 'calendar'
+        this.currentDate = new Date();
+        this.selectedDate = null;
+        this.dailyUsageData = new Map();
         this.settings = {
             exchangeRate: 150,
             darkMode: false,
@@ -79,14 +77,14 @@ class AppState {
             // ファイルシステム変更の監視
             window.electronAPI.onFileSystemChange((event) => {
                 console.log('File system change:', event);
-                this.refreshProjects();
+                this.refreshData();
             });
         } catch (error) {
             console.error('Failed to start file watcher:', error);
         }
 
-        // プロジェクトを読み込み
-        await this.refreshProjects();
+        // データを読み込み
+        await this.refreshData();
     }
 
     // イベントリスナーを設定
@@ -95,6 +93,7 @@ class AppState {
         document.getElementById('darkModeToggle').addEventListener('click', () => {
             this.settings.darkMode = !this.settings.darkMode;
             this.saveSettings();
+            this.updateChartsTheme();
         });
 
         // 設定モーダル
@@ -123,12 +122,15 @@ class AppState {
 
         // リフレッシュボタン
         document.getElementById('refreshButton').addEventListener('click', () => {
-            this.refreshProjects();
+            this.refreshData();
         });
 
-        // 全プロジェクトに戻るボタン
-        document.getElementById('backToAllProjectsButton').addEventListener('click', () => {
-            this.showAllProjectsView();
+        // 時間フィルターボタン
+        document.querySelectorAll('.time-filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const period = btn.dataset.period;
+                this.setTimePeriod(period);
+            });
         });
 
         // パス参照ボタン
@@ -152,21 +154,63 @@ class AppState {
         document.getElementById('fetchRateButton').addEventListener('click', () => {
             this.fetchCurrentExchangeRate();
         });
+
+        // チャートタイプ変更
+        document.getElementById('usageChartType').addEventListener('change', () => {
+            this.updateUsageChart();
+        });
+
+        // ビュー切り替え
+        document.getElementById('dashboardViewBtn').addEventListener('click', () => {
+            this.switchView('dashboard');
+        });
+
+        document.getElementById('calendarViewBtn').addEventListener('click', () => {
+            this.switchView('calendar');
+        });
+
+        // カレンダーナビゲーション
+        document.getElementById('prevMonthBtn').addEventListener('click', () => {
+            this.currentDate.setMonth(this.currentDate.getMonth() - 1);
+            this.renderCalendar();
+        });
+
+        document.getElementById('nextMonthBtn').addEventListener('click', () => {
+            this.currentDate.setMonth(this.currentDate.getMonth() + 1);
+            this.renderCalendar();
+        });
+
+        document.getElementById('todayBtn').addEventListener('click', () => {
+            this.currentDate = new Date();
+            this.renderCalendar();
+        });
+
+        document.getElementById('calendarRefreshBtn').addEventListener('click', () => {
+            this.refreshData();
+        });
     }
 
-    // プロジェクト一覧を更新
-    async refreshProjects() {
+    // データを更新
+    async refreshData() {
         this.setLoading(true);
         try {
             this.projects = await window.electronAPI.scanClaudeProjects();
-            this.renderProjects();
             await this.loadAllProjectsData();
             
             // 初回起動時または24時間以上経過している場合は自動で為替レートを取得
             await this.autoFetchExchangeRateIfNeeded();
+            
+            // 現在の期間でフィルタリング
+            this.filterDataByPeriod();
+            this.prepareDailyUsageData();
+            this.updateDashboard();
+            
+            if (this.currentView === 'calendar') {
+                this.renderCalendar();
+            }
         } catch (error) {
-            console.error('Failed to scan projects:', error);
-            this.showError('プロジェクトの読み込みに失敗しました: ' + error.message);
+            console.error('Failed to refresh data:', error);
+            this.showError('データの読み込みに失敗しました: ' + error.message);
         } finally {
             this.setLoading(false);
         }
@@ -174,155 +218,526 @@ class AppState {
 
     // 全プロジェクトのデータを読み込み
     async loadAllProjectsData() {
-        let totalTokens = 0;
-        let totalCostUSD = 0;
-        let totalCalls = 0;
-        let projectCount = 0;
-
+        this.allLogEntries = [];
+        
         for (const project of this.projects) {
             try {
                 const logEntries = await window.electronAPI.readProjectLogs(project.path);
+                // プロジェクト名を各エントリに追加
+                logEntries.forEach(entry => {
+                    entry.projectName = project.name;
+                });
+                this.allLogEntries.push(...logEntries);
                 this.allProjectsData.set(project.name, logEntries);
-                
-                const projectStats = this.calculateProjectStats(logEntries);
-                totalTokens += projectStats.totalTokens;
-                totalCostUSD += projectStats.costUSD;
-                totalCalls += projectStats.calls;
-                projectCount++;
             } catch (error) {
                 console.warn(`Failed to load data for project ${project.name}:`, error);
             }
         }
 
-        this.globalStats = {
-            totalTokens,
-            costUSD: totalCostUSD,
-            costJPY: totalCostUSD * this.settings.exchangeRate,
-            calls: totalCalls,
-            projectCount
-        };
-
-        // デフォルトで全プロジェクト統計を表示
-        this.showAllProjectsView();
+        // 時系列でソート
+        this.allLogEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     }
 
-    // プロジェクトの統計を計算
-    calculateProjectStats(logEntries) {
-        return logEntries.reduce((acc, entry) => {
+    // 時間期間を設定
+    setTimePeriod(period) {
+        this.currentPeriod = period;
+        
+        // ボタンのアクティブ状態を更新
+        document.querySelectorAll('.time-filter-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.period === period);
+        });
+        
+        this.filterDataByPeriod();
+        this.updateDashboard();
+    }
+
+    // 期間でデータをフィルタリング
+    filterDataByPeriod() {
+        const now = new Date();
+        let startDate;
+
+        switch (this.currentPeriod) {
+            case 'today':
+                startDate = new Date(now);
+                startDate.setHours(0, 0, 0, 0);
+                break;
+            case 'week':
+                startDate = new Date(now);
+                startDate.setDate(now.getDate() - now.getDay()); // 今週の日曜日
+                startDate.setHours(0, 0, 0, 0);
+                break;
+            case 'month':
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                break;
+            case 'year':
+                startDate = new Date(now.getFullYear(), 0, 1);
+                break;
+            case 'all':
+            default:
+                startDate = new Date(0); // すべての期間
+                break;
+        }
+
+        this.filteredEntries = this.allLogEntries.filter(entry => {
+            const entryDate = new Date(entry.timestamp);
+            return entryDate >= startDate;
+        });
+    }
+
+    // ダッシュボードを更新
+    updateDashboard() {
+        this.updateStatsOverview();
+        this.createCharts();
+        this.updateInsights();
+        this.updateProjectList();
+    }
+
+    // 統計概要を更新
+    updateStatsOverview() {
+        const now = new Date();
+        
+        // 現在の期間のデータを計算
+        const currentStats = this.calculateStats(this.filteredEntries);
+        const currentActiveHours = this.calculateActiveHours(this.filteredEntries);
+        
+        // 比較期間のデータを計算
+        const comparisonData = this.getComparisonPeriodData();
+        const comparisonStats = this.calculateStats(comparisonData);
+        
+        // 期間に応じてラベルとアイコンを設定
+        const periodConfig = this.getPeriodConfiguration();
+        
+        // 統計カードを更新
+        this.updateStatCard(1, {
+            icon: periodConfig.card1.icon,
+            label: periodConfig.card1.label,
+            value: currentStats.totalTokens.toLocaleString(),
+            unit: 'tokens'
+        });
+        
+        this.updateStatCard(2, {
+            icon: periodConfig.card2.icon,
+            label: periodConfig.card2.label,
+            value: `¥${Math.round(currentStats.costJPY).toLocaleString()}`,
+            unit: 'JPY'
+        });
+        
+        this.updateStatCard(3, {
+            icon: periodConfig.card3.icon,
+            label: periodConfig.card3.label,
+            value: currentActiveHours.toFixed(1),
+            unit: 'hours'
+        });
+        
+        // 4番目のカードの値を期間に応じて設定
+        let card4Value, card4Unit;
+        if (this.currentPeriod === 'all') {
+            card4Value = this.projects.length.toString();
+            card4Unit = 'projects';
+        } else {
+            card4Value = comparisonStats.totalTokens.toLocaleString();
+            card4Unit = 'tokens';
+        }
+        
+        this.updateStatCard(4, {
+            icon: periodConfig.card4.icon,
+            label: periodConfig.card4.label,
+            value: card4Value,
+            unit: card4Unit
+        });
+    }
+
+    // 期間設定を取得
+    getPeriodConfiguration() {
+        switch (this.currentPeriod) {
+            case 'today':
+                return {
+                    card1: { icon: 'today', label: '今日の使用量' },
+                    card2: { icon: 'attach_money', label: '今日のコスト' },
+                    card3: { icon: 'schedule', label: '今日の使用時間' },
+                    card4: { icon: 'yesterday', label: '前日の使用量' }
+                };
+            case 'week':
+                return {
+                    card1: { icon: 'date_range', label: '今週の使用量' },
+                    card2: { icon: 'attach_money', label: '今週のコスト' },
+                    card3: { icon: 'schedule', label: '今週の使用時間' },
+                    card4: { icon: 'compare_arrows', label: '先週の使用量' }
+                };
+            case 'month':
+                return {
+                    card1: { icon: 'calendar_month', label: '今月の使用量' },
+                    card2: { icon: 'attach_money', label: '今月のコスト' },
+                    card3: { icon: 'schedule', label: '今月の使用時間' },
+                    card4: { icon: 'compare_arrows', label: '先月の使用量' }
+                };
+            case 'year':
+                return {
+                    card1: { icon: 'calendar_view_year', label: '今年の使用量' },
+                    card2: { icon: 'attach_money', label: '今年のコスト' },
+                    card3: { icon: 'schedule', label: '今年の使用時間' },
+                    card4: { icon: 'compare_arrows', label: '昨年の使用量' }
+                };
+            case 'all':
+            default:
+                return {
+                    card1: { icon: 'trending_up', label: '総使用量' },
+                    card2: { icon: 'attach_money', label: '総コスト' },
+                    card3: { icon: 'schedule', label: '総使用時間' },
+                    card4: { icon: 'folder', label: 'プロジェクト数' }
+                };
+        }
+    }
+
+    // 比較期間のデータを取得
+    getComparisonPeriodData() {
+        const now = new Date();
+        let comparisonStartDate, comparisonEndDate;
+
+        switch (this.currentPeriod) {
+            case 'today':
+                // 前日
+                comparisonStartDate = new Date(now);
+                comparisonStartDate.setDate(now.getDate() - 1);
+                comparisonStartDate.setHours(0, 0, 0, 0);
+                comparisonEndDate = new Date(comparisonStartDate);
+                comparisonEndDate.setHours(23, 59, 59, 999);
+                break;
+                
+            case 'week':
+                // 先週
+                const thisWeekStart = new Date(now);
+                thisWeekStart.setDate(now.getDate() - now.getDay());
+                thisWeekStart.setHours(0, 0, 0, 0);
+                
+                comparisonStartDate = new Date(thisWeekStart);
+                comparisonStartDate.setDate(thisWeekStart.getDate() - 7);
+                comparisonEndDate = new Date(thisWeekStart);
+                comparisonEndDate.setMilliseconds(-1);
+                break;
+                
+            case 'month':
+                // 先月
+                comparisonStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                comparisonEndDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+                break;
+                
+            case 'year':
+                // 昨年
+                comparisonStartDate = new Date(now.getFullYear() - 1, 0, 1);
+                comparisonEndDate = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
+                break;
+                
+            case 'all':
+            default:
+                // 全期間の場合はプロジェクト数を返す
+                return [];
+        }
+
+        return this.allLogEntries.filter(entry => {
+            const entryDate = new Date(entry.timestamp);
+            return entryDate >= comparisonStartDate && entryDate <= comparisonEndDate;
+        });
+    }
+
+    // 統計カードを更新
+    updateStatCard(cardNumber, config) {
+        document.getElementById(`statIcon${cardNumber}`).textContent = config.icon;
+        document.getElementById(`statLabel${cardNumber}`).textContent = config.label;
+        document.getElementById(`statValue${cardNumber}`).textContent = config.value;
+        document.getElementById(`statUnit${cardNumber}`).textContent = config.unit;
+    }
+
+    // 統計を計算
+    calculateStats(entries) {
+        return entries.reduce((acc, entry) => {
             if (entry.message && entry.message.usage) {
                 acc.totalTokens += (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
             }
             acc.costUSD += entry.costUSD || 0;
+            acc.costJPY += (entry.costUSD || 0) * this.settings.exchangeRate;
             acc.calls += 1;
             return acc;
-        }, { totalTokens: 0, costUSD: 0, calls: 0 });
+        }, { totalTokens: 0, costUSD: 0, costJPY: 0, calls: 0 });
     }
 
-    // プロジェクトを選択
-    async selectProject(project) {
-        if (this.selectedProject === project.name) return;
-        
-        this.selectedProject = project.name;
-        this.setLoading(true);
-        this.updateUI();
+    // アクティブ時間を計算
+    calculateActiveHours(entries = null) {
+        const targetEntries = entries || this.allLogEntries;
+        if (targetEntries.length === 0) return 0;
 
-        try {
-            // キャッシュからデータを取得するか、新たに読み込み
-            if (this.allProjectsData.has(project.name)) {
-                this.logEntries = this.allProjectsData.get(project.name);
-            } else {
-                this.logEntries = await window.electronAPI.readProjectLogs(project.path);
-                this.allProjectsData.set(project.name, this.logEntries);
+        const dailyUsage = new Map();
+        
+        targetEntries.forEach(entry => {
+            const date = new Date(entry.timestamp).toISOString().split('T')[0];
+            const hour = new Date(entry.timestamp).getHours();
+            
+            if (!dailyUsage.has(date)) {
+                dailyUsage.set(date, new Set());
             }
-            
-            this.processLogEntries();
-            this.showProjectStats(project.name);
-            this.renderProjects(); // アクティブ状態を更新
-        } catch (error) {
-            console.error('Failed to read project logs:', error);
-            this.showError('プロジェクトデータの読み込みに失敗しました: ' + error.message);
-        } finally {
-            this.setLoading(false);
+            dailyUsage.get(date).add(hour);
+        });
+
+        let totalHours = 0;
+        for (const hours of dailyUsage.values()) {
+            totalHours += hours.size;
         }
+
+        return totalHours;
     }
 
-    // 全プロジェクト表示
-    showAllProjectsView() {
-        this.selectedProject = 'all';
-        this.combineAllProjectsData();
+    // チャートを作成
+    createCharts() {
+        this.createUsageChart();
+        this.createHourlyChart();
+        this.createProjectChart();
+        this.createWeeklyChart();
+    }
+
+    // 使用量推移チャート
+    createUsageChart() {
+        const ctx = document.getElementById('usageChart').getContext('2d');
         
-        // 統計表示を全プロジェクト用に切り替え
-        this.updateStatsDisplay(true);
-        this.renderGlobalStats();
-        this.renderChart();
-        this.renderTable();
+        if (this.charts.usage) {
+            this.charts.usage.destroy();
+        }
+
+        const dailyData = this.aggregateDataByDay(this.filteredEntries);
+        const chartType = document.getElementById('usageChartType').value;
+
+        let data, label, color;
+        switch (chartType) {
+            case 'tokens':
+                data = dailyData.map(d => d.totalTokens);
+                label = 'トークン数';
+                color = '#3b82f6';
+                break;
+            case 'cost':
+                data = dailyData.map(d => d.costJPY);
+                label = 'コスト (¥)';
+                color = '#10b981';
+                break;
+            case 'calls':
+                data = dailyData.map(d => d.calls);
+                label = 'API呼び出し数';
+                color = '#f59e0b';
+                break;
+        }
+
+        this.charts.usage = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dailyData.map(d => new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })),
+                datasets: [{
+                    label: label,
+                    data: data,
+                    borderColor: color,
+                    backgroundColor: color + '20',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                        },
+                        ticks: {
+                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                        },
+                        ticks: {
+                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 時間別使用パターンチャート
+    createHourlyChart() {
+        const ctx = document.getElementById('hourlyChart').getContext('2d');
         
-        // プロジェクト一覧のアクティブ状態をクリア
-        this.renderProjects();
-    }
-
-    // 個別プロジェクト統計表示
-    showProjectStats(projectName) {
-        // 統計表示を個別プロジェクト用に切り替え
-        this.updateStatsDisplay(false, projectName);
-        this.renderProjectStats();
-        this.renderChart();
-        this.renderTable();
-    }
-
-    // 統計表示の切り替え
-    updateStatsDisplay(isGlobal, projectName = '') {
-        const statsIcon = document.getElementById('statsIcon');
-        const statsTitle = document.getElementById('statsTitle');
-        const backButton = document.getElementById('backToAllProjectsButton');
-        const statCards = document.querySelectorAll('#mainStatsGrid .stat-card');
-
-        if (isGlobal) {
-            // 全プロジェクト表示
-            statsIcon.textContent = 'analytics';
-            statsTitle.textContent = '全プロジェクト統計';
-            backButton.classList.add('hidden');
-            
-            // カードにグローバルスタイルを適用
-            statCards.forEach(card => {
-                card.classList.add('global');
-            });
-        } else {
-            // 個別プロジェクト表示
-            statsIcon.textContent = 'folder';
-            statsTitle.textContent = `${projectName} 統計`;
-            backButton.classList.remove('hidden');
-            
-            // カードからグローバルスタイルを除去
-            statCards.forEach(card => {
-                card.classList.remove('global');
-            });
+        if (this.charts.hourly) {
+            this.charts.hourly.destroy();
         }
+
+        const hourlyData = this.aggregateDataByHour(this.filteredEntries);
+
+        this.charts.hourly = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+                datasets: [{
+                    label: 'API呼び出し数',
+                    data: hourlyData,
+                    backgroundColor: '#60a5fa',
+                    borderColor: '#3b82f6',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                        },
+                        ticks: {
+                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                        },
+                        ticks: {
+                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                        }
+                    }
+                }
+            }
+        });
     }
 
-    // 全プロジェクトのデータを結合
-    combineAllProjectsData() {
-        this.logEntries = [];
-        for (const [projectName, logEntries] of this.allProjectsData) {
-            this.logEntries.push(...logEntries);
+    // プロジェクト別使用量チャート
+    createProjectChart() {
+        const ctx = document.getElementById('projectChart').getContext('2d');
+        
+        if (this.charts.project) {
+            this.charts.project.destroy();
         }
-        // 時系列でソート
-        this.logEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-        this.processLogEntries();
+
+        const projectData = this.aggregateDataByProject(this.filteredEntries);
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'];
+
+        this.charts.project = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: projectData.map(d => d.project),
+                datasets: [{
+                    data: projectData.map(d => d.totalTokens),
+                    backgroundColor: colors.slice(0, projectData.length),
+                    borderColor: this.settings.darkMode ? '#1e293b' : '#ffffff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b',
+                            usePointStyle: true,
+                            padding: 20
+                        }
+                    }
+                }
+            }
+        });
     }
 
-    // ログエントリを処理して日別統計を生成
-    processLogEntries() {
+    // 週別比較チャート
+    createWeeklyChart() {
+        const ctx = document.getElementById('weeklyChart').getContext('2d');
+        
+        if (this.charts.weekly) {
+            this.charts.weekly.destroy();
+        }
+
+        const weeklyData = this.aggregateDataByWeek(this.filteredEntries);
+        const currentWeek = weeklyData[weeklyData.length - 1];
+        const previousWeek = weeklyData[weeklyData.length - 2];
+
+        const dayLabels = ['日', '月', '火', '水', '木', '金', '土'];
+        
+        this.charts.weekly = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: dayLabels,
+                datasets: [
+                    {
+                        label: '今週',
+                        data: currentWeek ? currentWeek.dailyTokens : new Array(7).fill(0),
+                        backgroundColor: '#3b82f6',
+                        borderColor: '#1e40af',
+                        borderWidth: 1
+                    },
+                    {
+                        label: '先週',
+                        data: previousWeek ? previousWeek.dailyTokens : new Array(7).fill(0),
+                        backgroundColor: '#94a3b8',
+                        borderColor: '#64748b',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                        },
+                        ticks: {
+                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                        },
+                        ticks: {
+                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 日別データ集計
+    aggregateDataByDay(entries) {
         const dailyMap = new Map();
 
-        this.logEntries.forEach(entry => {
+        entries.forEach(entry => {
             const date = new Date(entry.timestamp).toISOString().split('T')[0];
             
             if (!dailyMap.has(date)) {
                 dailyMap.set(date, {
                     date,
-                    inputTokens: 0,
-                    outputTokens: 0,
                     totalTokens: 0,
                     costUSD: 0,
                     costJPY: 0,
@@ -332,8 +747,6 @@ class AppState {
 
             const daily = dailyMap.get(date);
             if (entry.message && entry.message.usage) {
-                daily.inputTokens += entry.message.usage.input_tokens || 0;
-                daily.outputTokens += entry.message.usage.output_tokens || 0;
                 daily.totalTokens += (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
             }
             daily.costUSD += entry.costUSD || 0;
@@ -341,133 +754,150 @@ class AppState {
             daily.calls += 1;
         });
 
-        this.dailyStats = Array.from(dailyMap.values()).sort((a, b) => 
+        return Array.from(dailyMap.values()).sort((a, b) => 
             new Date(a.date).getTime() - new Date(b.date).getTime()
         );
     }
 
-    // ローディング状態を設定
-    setLoading(loading) {
-        this.loading = loading;
-        this.updateUI();
+    // 時間別データ集計
+    aggregateDataByHour(entries) {
+        const hourlyData = new Array(24).fill(0);
+
+        entries.forEach(entry => {
+            const hour = new Date(entry.timestamp).getHours();
+            hourlyData[hour]++;
+        });
+
+        return hourlyData;
     }
 
-    // エラーを表示
-    showError(message) {
-        this.error = message;
-        document.getElementById('errorMessage').textContent = message;
-        document.getElementById('errorToast').classList.remove('hidden');
-        
-        // 5秒後に自動で閉じる
+    // プロジェクト別データ集計
+    aggregateDataByProject(entries) {
+        const projectMap = new Map();
+
+        entries.forEach(entry => {
+            const project = entry.projectName || 'Unknown';
+            
+            if (!projectMap.has(project)) {
+                projectMap.set(project, {
+                    project,
+                    totalTokens: 0,
+                    costUSD: 0,
+                    calls: 0
+                });
+            }
+
+            const projectData = projectMap.get(project);
+            if (entry.message && entry.message.usage) {
+                projectData.totalTokens += (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
+            }
+            projectData.costUSD += entry.costUSD || 0;
+            projectData.calls += 1;
+        });
+
+        return Array.from(projectMap.values())
+            .sort((a, b) => b.totalTokens - a.totalTokens)
+            .slice(0, 8); // 上位8プロジェクト
+    }
+
+    // 週別データ集計
+    aggregateDataByWeek(entries) {
+        const weeklyMap = new Map();
+
+        entries.forEach(entry => {
+            const date = new Date(entry.timestamp);
+            const weekStart = new Date(date);
+            weekStart.setDate(date.getDate() - date.getDay());
+            weekStart.setHours(0, 0, 0, 0);
+            const weekKey = weekStart.toISOString().split('T')[0];
+
+            if (!weeklyMap.has(weekKey)) {
+                weeklyMap.set(weekKey, {
+                    week: weekKey,
+                    dailyTokens: new Array(7).fill(0),
+                    totalTokens: 0
+                });
+            }
+
+            const weekData = weeklyMap.get(weekKey);
+            const dayOfWeek = date.getDay();
+            
+            if (entry.message && entry.message.usage) {
+                const tokens = (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
+                weekData.dailyTokens[dayOfWeek] += tokens;
+                weekData.totalTokens += tokens;
+            }
+        });
+
+        return Array.from(weeklyMap.values())
+            .sort((a, b) => new Date(a.week).getTime() - new Date(b.week).getTime())
+            .slice(-4); // 最新4週間
+    }
+
+    // 使用量チャートを更新
+    updateUsageChart() {
+        this.createUsageChart();
+    }
+
+    // 洞察を更新
+    updateInsights() {
+        const stats = this.calculateStats(this.filteredEntries);
+        const dailyData = this.aggregateDataByDay(this.filteredEntries);
+        const projectData = this.aggregateDataByProject(this.filteredEntries);
+        const hourlyData = this.aggregateDataByHour(this.filteredEntries);
+
+        // 平均日使用量
+        const avgDaily = dailyData.length > 0 ? Math.round(stats.totalTokens / dailyData.length) : 0;
+        document.getElementById('avgDailyUsage').textContent = avgDaily.toLocaleString() + ' tokens';
+
+        // 最も活発な時間
+        const peakHour = hourlyData.indexOf(Math.max(...hourlyData));
+        document.getElementById('peakHour').textContent = `${peakHour}:00 - ${peakHour + 1}:00`;
+
+        // 最も使用したプロジェクト
+        const topProject = projectData.length > 0 ? projectData[0] : null;
+        document.getElementById('topProject').textContent = topProject ? topProject.project : '-';
+    }
+
+    // プロジェクト一覧を更新
+    updateProjectList() {
+        const container = document.getElementById('projectListCompact');
+        const projectData = this.aggregateDataByProject(this.allLogEntries);
+
+        container.innerHTML = projectData.map(project => `
+            <div class="project-item-compact">
+                <div class="project-name-compact">${project.project}</div>
+                <div class="project-stats-compact">
+                    ${project.totalTokens.toLocaleString()} tokens • 
+                    ${project.calls.toLocaleString()} calls
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // チャートテーマを更新
+    updateChartsTheme() {
+        // チャートを再作成してテーマを適用
         setTimeout(() => {
-            this.hideError();
-        }, 5000);
+            this.createCharts();
+        }, 100);
     }
 
-    // エラーを非表示
-    hideError() {
-        this.error = null;
-        document.getElementById('errorToast').classList.add('hidden');
-    }
-
-    // 設定モーダルを表示
-    showSettingsModal() {
-        document.getElementById('exchangeRate').value = this.settings.exchangeRate;
-        document.getElementById('customPath').value = this.settings.customProjectPath;
-        document.getElementById('darkModeCheckbox').checked = this.settings.darkMode;
-        this.updateExchangeRateInfo();
-        document.getElementById('settingsModal').classList.remove('hidden');
-    }
-
-    // 設定モーダルを非表示
-    hideSettingsModal() {
-        document.getElementById('settingsModal').classList.add('hidden');
-    }
-
-    // モーダルから設定を保存
-    saveSettingsFromModal() {
-        const oldRate = this.settings.exchangeRate;
-        const newRate = parseFloat(document.getElementById('exchangeRate').value) || 150;
-        
-        // 手動で変更された場合は手動設定として記録
-        if (newRate !== oldRate && this.settings.rateSource !== 'manual_override') {
-            this.settings.rateSource = 'manual';
-            this.settings.lastRateUpdate = Date.now();
-        }
-        
-        this.settings.exchangeRate = newRate;
-        this.settings.customProjectPath = document.getElementById('customPath').value;
-        this.settings.darkMode = document.getElementById('darkModeCheckbox').checked;
-        
-        this.saveSettings();
-        this.hideSettingsModal();
-        
-        // グローバル統計のJPY換算を更新
-        this.globalStats.costJPY = this.globalStats.costUSD * this.settings.exchangeRate;
-        
-        // データを再計算
-        if (this.logEntries.length > 0) {
-            this.processLogEntries();
-            this.renderDashboard();
-        } else {
-            this.renderGlobalStats();
-        }
-    }
-
-    // 為替レート情報を更新
-    updateExchangeRateInfo() {
-        const info = document.getElementById('exchangeRateInfo');
-        const lastUpdate = this.settings.lastRateUpdate;
-        
-        if (this.settings.rateSource === 'manual') {
-            info.textContent = '手動設定';
-            info.className = 'rate-info';
-        } else if (lastUpdate) {
-            const updateDate = new Date(lastUpdate);
-            const timeAgo = this.getTimeAgo(updateDate);
-            info.textContent = `API取得 (${this.settings.rateSource}) - ${timeAgo}`;
-            info.className = 'rate-info success';
-        } else {
-            info.textContent = 'デフォルト値';
-            info.className = 'rate-info';
-        }
-    }
-
-    // 時間差を取得
-    getTimeAgo(date) {
-        const now = new Date();
-        const diffMs = now - date;
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffMinutes = Math.floor(diffMs / (1000 * 60));
-        
-        if (diffHours > 24) {
-            return `${Math.floor(diffHours / 24)}日前`;
-        } else if (diffHours > 0) {
-            return `${diffHours}時間前`;
-        } else if (diffMinutes > 0) {
-            return `${diffMinutes}分前`;
-        } else {
-            return '今';
-        }
-    }
-
-    // 自動で為替レートを取得（24時間毎）
+    // 為替レート関連メソッド（前回のコードから継承）
     async autoFetchExchangeRateIfNeeded() {
         const lastUpdate = this.settings.lastRateUpdate;
         const now = Date.now();
         const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
         
-        // 初回起動または24時間以上経過している場合
         if (!lastUpdate || (now - lastUpdate) > TWENTY_FOUR_HOURS) {
             try {
-                await this.fetchCurrentExchangeRate(true); // サイレント更新
+                await this.fetchCurrentExchangeRate(true);
             } catch (error) {
                 console.log('Auto fetch exchange rate failed, using current rate:', error);
             }
         }
     }
 
-    // 現在の為替レートを取得
     async fetchCurrentExchangeRate(silent = false) {
         if (!window.electronAPI || !window.electronAPI.fetchExchangeRate) {
             this.showError('為替レートAPIが利用できません');
@@ -486,24 +916,17 @@ class AppState {
             const result = await window.electronAPI.fetchExchangeRate();
             
             if (result.success) {
-                this.settings.exchangeRate = Math.round(result.rate * 100) / 100; // 小数点2桁に丸める
+                this.settings.exchangeRate = Math.round(result.rate * 100) / 100;
                 this.settings.lastRateUpdate = result.timestamp;
                 this.settings.rateSource = result.source;
                 
                 this.saveSettings();
                 
-                // UIを更新
                 document.getElementById('exchangeRate').value = this.settings.exchangeRate;
                 this.updateExchangeRateInfo();
                 
                 // 統計を再計算
-                this.globalStats.costJPY = this.globalStats.costUSD * this.settings.exchangeRate;
-                if (this.logEntries.length > 0) {
-                    this.processLogEntries();
-                    this.renderDashboard();
-                } else {
-                    this.renderGlobalStats();
-                }
+                this.updateDashboard();
                 
                 if (!silent) {
                     this.showSuccess(`為替レートを更新しました: ${this.settings.exchangeRate} JPY/USD`);
@@ -527,9 +950,41 @@ class AppState {
         }
     }
 
-    // 成功メッセージを表示
+    // UIヘルパーメソッド
+    setLoading(loading) {
+        this.loading = loading;
+        this.updateUI();
+    }
+
+    updateUI() {
+        const loadingMessage = document.getElementById('loadingMessage');
+        const mainDashboard = document.getElementById('mainDashboard');
+
+        if (this.loading) {
+            loadingMessage.classList.remove('hidden');
+            mainDashboard.classList.add('hidden');
+        } else {
+            loadingMessage.classList.add('hidden');
+            mainDashboard.classList.remove('hidden');
+        }
+    }
+
+    showError(message) {
+        this.error = message;
+        document.getElementById('errorMessage').textContent = message;
+        document.getElementById('errorToast').classList.remove('hidden');
+        
+        setTimeout(() => {
+            this.hideError();
+        }, 5000);
+    }
+
+    hideError() {
+        this.error = null;
+        document.getElementById('errorToast').classList.add('hidden');
+    }
+
     showSuccess(message) {
-        // エラートーストを成功メッセージ用に一時的に使用
         const toast = document.getElementById('errorToast');
         const messageEl = document.getElementById('errorMessage');
         
@@ -539,199 +994,385 @@ class AppState {
         
         setTimeout(() => {
             toast.classList.add('hidden');
-            // クラスを元に戻す
             setTimeout(() => {
                 toast.className = 'toast error hidden';
             }, 300);
         }, 3000);
     }
 
-    // UIを更新
+    showSettingsModal() {
+        document.getElementById('exchangeRate').value = this.settings.exchangeRate;
+        document.getElementById('customPath').value = this.settings.customProjectPath;
+        document.getElementById('darkModeCheckbox').checked = this.settings.darkMode;
+        this.updateExchangeRateInfo();
+        document.getElementById('settingsModal').classList.remove('hidden');
+    }
+
+    hideSettingsModal() {
+        document.getElementById('settingsModal').classList.add('hidden');
+    }
+
+    saveSettingsFromModal() {
+        const oldRate = this.settings.exchangeRate;
+        const newRate = parseFloat(document.getElementById('exchangeRate').value) || 150;
+        
+        if (newRate !== oldRate && this.settings.rateSource !== 'manual_override') {
+            this.settings.rateSource = 'manual';
+            this.settings.lastRateUpdate = Date.now();
+        }
+        
+        this.settings.exchangeRate = newRate;
+        this.settings.customProjectPath = document.getElementById('customPath').value;
+        this.settings.darkMode = document.getElementById('darkModeCheckbox').checked;
+        
+        this.saveSettings();
+        this.hideSettingsModal();
+        
+        this.updateDashboard();
+    }
+
+    updateExchangeRateInfo() {
+        const info = document.getElementById('exchangeRateInfo');
+        const lastUpdate = this.settings.lastRateUpdate;
+        
+        if (this.settings.rateSource === 'manual') {
+            info.textContent = '手動設定';
+            info.className = 'rate-info';
+        } else if (lastUpdate) {
+            const updateDate = new Date(lastUpdate);
+            const timeAgo = this.getTimeAgo(updateDate);
+            info.textContent = `API取得 (${this.settings.rateSource}) - ${timeAgo}`;
+            info.className = 'rate-info success';
+        } else {
+            info.textContent = 'デフォルト値';
+            info.className = 'rate-info';
+        }
+    }
+
+    getTimeAgo(date) {
+        const now = new Date();
+        const diffMs = now - date;
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+        
+        if (diffHours > 24) {
+            return `${Math.floor(diffHours / 24)}日前`;
+        } else if (diffHours > 0) {
+            return `${diffHours}時間前`;
+        } else if (diffMinutes > 0) {
+            return `${diffMinutes}分前`;
+        } else {
+            return '今';
+        }
+    }
+
+    // ビュー切り替え
+    switchView(view) {
+        this.currentView = view;
+        
+        // ビューボタンのアクティブ状態を更新
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        
+        if (view === 'dashboard') {
+            document.getElementById('dashboardViewBtn').classList.add('active');
+            document.getElementById('mainDashboard').classList.remove('hidden');
+            document.getElementById('calendarView').classList.add('hidden');
+        } else if (view === 'calendar') {
+            document.getElementById('calendarViewBtn').classList.add('active');
+            document.getElementById('mainDashboard').classList.add('hidden');
+            document.getElementById('calendarView').classList.remove('hidden');
+            this.renderCalendar();
+        }
+    }
+
+    // 日別使用量データを準備
+    prepareDailyUsageData() {
+        this.dailyUsageData.clear();
+        
+        this.allLogEntries.forEach(entry => {
+            const date = new Date(entry.timestamp).toISOString().split('T')[0];
+            
+            if (!this.dailyUsageData.has(date)) {
+                this.dailyUsageData.set(date, {
+                    date,
+                    totalTokens: 0,
+                    costUSD: 0,
+                    costJPY: 0,
+                    calls: 0,
+                    activeHours: new Set(),
+                    projects: new Set()
+                });
+            }
+
+            const daily = this.dailyUsageData.get(date);
+            if (entry.message && entry.message.usage) {
+                daily.totalTokens += (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
+            }
+            daily.costUSD += entry.costUSD || 0;
+            daily.costJPY += (entry.costUSD || 0) * this.settings.exchangeRate;
+            daily.calls += 1;
+            daily.activeHours.add(new Date(entry.timestamp).getHours());
+            if (entry.projectName) {
+                daily.projects.add(entry.projectName);
+            }
+        });
+
+        // アクティブ時間数を計算
+        for (const daily of this.dailyUsageData.values()) {
+            daily.activeHoursCount = daily.activeHours.size;
+        }
+    }
+
+    // カレンダーを描画
+    renderCalendar() {
+        const year = this.currentDate.getFullYear();
+        const month = this.currentDate.getMonth();
+        
+        // カレンダータイトルを更新
+        document.getElementById('calendarTitle').textContent = 
+            `${year}年${month + 1}月`;
+
+        // 月の最初の日と最後の日を取得
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const startDate = new Date(firstDay);
+        startDate.setDate(startDate.getDate() - firstDay.getDay()); // 週の開始日に合わせる
+
+        const calendarDays = document.getElementById('calendarDays');
+        calendarDays.innerHTML = '';
+
+        // 6週間分のカレンダーを生成
+        for (let week = 0; week < 6; week++) {
+            for (let day = 0; day < 7; day++) {
+                const currentDate = new Date(startDate);
+                currentDate.setDate(startDate.getDate() + (week * 7) + day);
+                
+                const dayElement = this.createCalendarDay(currentDate, month);
+                calendarDays.appendChild(dayElement);
+            }
+        }
+    }
+
+    // カレンダーの日付セルを作成
+    createCalendarDay(date, currentMonth) {
+        const dayElement = document.createElement('div');
+        dayElement.className = 'calendar-day';
+        
+        const dateKey = date.toISOString().split('T')[0];
+        const dayNumber = date.getDate();
+        const isCurrentMonth = date.getMonth() === currentMonth;
+        const isToday = this.isToday(date);
+        const dailyData = this.dailyUsageData.get(dateKey);
+
+        // 日付番号
+        const dayNumberElement = document.createElement('div');
+        dayNumberElement.className = 'day-number';
+        dayNumberElement.textContent = dayNumber;
+        dayElement.appendChild(dayNumberElement);
+
+        // 使用量表示
+        if (dailyData && dailyData.totalTokens > 0) {
+            const dayUsageElement = document.createElement('div');
+            dayUsageElement.className = 'day-usage';
+            dayUsageElement.textContent = this.formatTokens(dailyData.totalTokens);
+            dayElement.appendChild(dayUsageElement);
+
+            // 使用量レベルに応じてクラスを追加
+            const level = this.getUsageLevel(dailyData.totalTokens);
+            dayElement.classList.add(`level-${level}`);
+            dayElement.classList.add('has-usage');
+        } else {
+            dayElement.classList.add('level-0');
+        }
+
+        // 状態クラスを追加
+        if (!isCurrentMonth) {
+            dayElement.classList.add('other-month');
+        }
+        if (isToday) {
+            dayElement.classList.add('today');
+        }
+        if (this.selectedDate && this.selectedDate.toDateString() === date.toDateString()) {
+            dayElement.classList.add('selected');
+        }
+
+        // クリックイベント
+        dayElement.addEventListener('click', () => {
+            this.selectDate(date);
+        });
+
+        return dayElement;
+    }
+
+    // 日付を選択
+    selectDate(date) {
+        this.selectedDate = date;
+        
+        // 選択状態を更新
+        document.querySelectorAll('.calendar-day').forEach(day => {
+            day.classList.remove('selected');
+        });
+        event.target.closest('.calendar-day').classList.add('selected');
+
+        // サイドバーを更新
+        this.updateSelectedDateInfo(date);
+        this.renderCalendar(); // カレンダーを再描画して選択状態を反映
+    }
+
+    // 選択された日付の情報を更新
+    updateSelectedDateInfo(date) {
+        const dateKey = date.toISOString().split('T')[0];
+        const dailyData = this.dailyUsageData.get(dateKey);
+        
+        // タイトルを更新
+        const dateTitle = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+        document.getElementById('selectedDateTitle').textContent = dateTitle;
+
+        const statsContainer = document.getElementById('selectedDateStats');
+        
+        if (dailyData && dailyData.totalTokens > 0) {
+            // 統計を表示
+            document.getElementById('selectedDateTokens').textContent = 
+                `${dailyData.totalTokens.toLocaleString()} tokens`;
+            document.getElementById('selectedDateCost').textContent = 
+                `¥${Math.round(dailyData.costJPY).toLocaleString()}`;
+            document.getElementById('selectedDateCalls').textContent = 
+                `${dailyData.calls.toLocaleString()} calls`;
+            document.getElementById('selectedDateHours').textContent = 
+                `${dailyData.activeHoursCount} hours`;
+            
+            statsContainer.classList.remove('hidden');
+            
+            // 選択日のプロジェクト別チャートを更新
+            this.updateDailyProjectChart(date);
+        } else {
+            // データがない場合は非表示
+            statsContainer.classList.add('hidden');
+            this.clearDailyProjectChart();
+        }
+    }
+
+    // 選択日のプロジェクト別チャートを更新
+    updateDailyProjectChart(date) {
+        const dateKey = date.toISOString().split('T')[0];
+        const dayEntries = this.allLogEntries.filter(entry => {
+            return entry.timestamp.startsWith(dateKey);
+        });
+
+        if (dayEntries.length === 0) {
+            this.clearDailyProjectChart();
+            return;
+        }
+
+        const projectData = this.aggregateDataByProject(dayEntries);
+        const ctx = document.getElementById('dailyProjectChart').getContext('2d');
+        
+        if (this.charts.dailyProject) {
+            this.charts.dailyProject.destroy();
+        }
+
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+
+        this.charts.dailyProject = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: projectData.map(d => d.project),
+                datasets: [{
+                    data: projectData.map(d => d.totalTokens),
+                    backgroundColor: colors.slice(0, projectData.length),
+                    borderColor: this.settings.darkMode ? '#1e293b' : '#ffffff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b',
+                            usePointStyle: true,
+                            padding: 10,
+                            font: {
+                                size: 11
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 日別プロジェクトチャートをクリア
+    clearDailyProjectChart() {
+        if (this.charts.dailyProject) {
+            this.charts.dailyProject.destroy();
+            this.charts.dailyProject = null;
+        }
+        
+        const ctx = document.getElementById('dailyProjectChart').getContext('2d');
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.fillStyle = this.settings.darkMode ? '#cbd5e1' : '#64748b';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('データなし', ctx.canvas.width / 2, ctx.canvas.height / 2);
+    }
+
+    // 使用量レベルを計算（0-4の5段階）
+    getUsageLevel(tokens) {
+        if (tokens === 0) return 0;
+        
+        // 全データから最大値を取得してレベルを計算
+        const maxTokens = Math.max(...Array.from(this.dailyUsageData.values()).map(d => d.totalTokens));
+        if (maxTokens === 0) return 0;
+        
+        const ratio = tokens / maxTokens;
+        if (ratio <= 0.2) return 1;
+        if (ratio <= 0.4) return 2;
+        if (ratio <= 0.7) return 3;
+        return 4;
+    }
+
+    // トークン数をフォーマット
+    formatTokens(tokens) {
+        if (tokens >= 10000) {
+            return `${Math.round(tokens / 1000)}k`;
+        } else if (tokens >= 1000) {
+            return `${(tokens / 1000).toFixed(1)}k`;
+        }
+        return tokens.toString();
+    }
+
+    // 今日かどうかをチェック
+    isToday(date) {
+        const today = new Date();
+        return date.toDateString() === today.toDateString();
+    }
+
+    // UIを更新（ビュー対応）
     updateUI() {
-        const welcomeMessage = document.getElementById('welcomeMessage');
         const loadingMessage = document.getElementById('loadingMessage');
         const mainDashboard = document.getElementById('mainDashboard');
+        const calendarView = document.getElementById('calendarView');
 
-        // すべてを非表示
-        welcomeMessage.classList.add('hidden');
-        loadingMessage.classList.add('hidden');
-        mainDashboard.classList.add('hidden');
-
-        if (this.loading && this.selectedProject) {
+        if (this.loading) {
             loadingMessage.classList.remove('hidden');
-        } else if (this.selectedProject === 'all' || (this.selectedProject && this.logEntries.length > 0)) {
-            mainDashboard.classList.remove('hidden');
-        } else if (this.globalStats.projectCount > 0) {
-            // プロジェクトが読み込まれている場合は全プロジェクト統計を表示
-            mainDashboard.classList.remove('hidden');
+            mainDashboard.classList.add('hidden');
+            calendarView.classList.add('hidden');
         } else {
-            welcomeMessage.classList.remove('hidden');
-        }
-    }
-
-    // プロジェクト一覧を描画
-    renderProjects() {
-        const projectList = document.getElementById('projectList');
-        
-        if (this.projects.length === 0) {
-            projectList.innerHTML = '<div class="loading">プロジェクトが見つかりません</div>';
-            return;
-        }
-
-        projectList.innerHTML = this.projects.map(project => `
-            <div class="project-item ${this.selectedProject === project.name ? 'active' : ''}" 
-                 data-project='${JSON.stringify(project)}'>
-                <div class="project-name">${project.name}</div>
-                <div class="project-meta">
-                    ${project.logFiles.length} ファイル • 
-                    ${new Date(project.lastModified).toLocaleDateString('ja-JP')}
-                </div>
-            </div>
-        `).join('');
-
-        // プロジェクトクリックイベント
-        projectList.querySelectorAll('.project-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const project = JSON.parse(item.dataset.project);
-                this.selectProject(project);
-            });
-        });
-    }
-
-    // グローバル統計を描画
-    renderGlobalStats() {
-        document.getElementById('statValue1').textContent = this.globalStats.totalTokens.toLocaleString();
-        document.getElementById('statValue2').textContent = `$${this.globalStats.costUSD.toFixed(2)}`;
-        document.getElementById('statValue3').textContent = `¥${Math.round(this.globalStats.costJPY).toLocaleString()}`;
-        document.getElementById('statValue4').textContent = this.globalStats.calls.toLocaleString();
-        
-        document.getElementById('statProjects1').textContent = `${this.globalStats.projectCount} プロジェクト`;
-        document.getElementById('statProjects2').textContent = `${this.globalStats.projectCount} プロジェクト`;
-        document.getElementById('statProjects3').textContent = `${this.globalStats.projectCount} プロジェクト`;
-        document.getElementById('statProjects4').textContent = `${this.globalStats.projectCount} プロジェクト`;
-    }
-
-    // 個別プロジェクト統計を描画
-    renderProjectStats() {
-        const totals = this.dailyStats.reduce((acc, day) => ({
-            totalTokens: acc.totalTokens + day.totalTokens,
-            costUSD: acc.costUSD + day.costUSD,
-            costJPY: acc.costJPY + day.costJPY,
-            calls: acc.calls + day.calls
-        }), { totalTokens: 0, costUSD: 0, costJPY: 0, calls: 0 });
-
-        document.getElementById('statValue1').textContent = totals.totalTokens.toLocaleString();
-        document.getElementById('statValue2').textContent = `$${totals.costUSD.toFixed(2)}`;
-        document.getElementById('statValue3').textContent = `¥${Math.round(totals.costJPY).toLocaleString()}`;
-        document.getElementById('statValue4').textContent = totals.calls.toLocaleString();
-        
-        // プロジェクト統計では詳細情報を非表示
-        document.getElementById('statProjects1').textContent = '';
-        document.getElementById('statProjects2').textContent = '';
-        document.getElementById('statProjects3').textContent = '';
-        document.getElementById('statProjects4').textContent = '';
-    }
-
-
-    // チャートを描画
-    renderChart() {
-        const canvas = document.getElementById('usageChart');
-        const ctx = canvas.getContext('2d');
-        
-        // キャンバスをクリア
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        if (this.dailyStats.length === 0) {
-            ctx.fillStyle = '#666';
-            ctx.font = '16px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('データがありません', canvas.width / 2, canvas.height / 2);
-            return;
-        }
-
-        const padding = 60;
-        const chartWidth = canvas.width - padding * 2;
-        const chartHeight = canvas.height - padding * 2;
-        
-        // データの最大値を取得
-        const maxTokens = Math.max(...this.dailyStats.map(d => d.totalTokens));
-        const maxCost = Math.max(...this.dailyStats.map(d => d.costJPY));
-        
-        if (maxTokens === 0) return;
-
-        // バーの描画
-        const barWidth = chartWidth / this.dailyStats.length;
-        
-        this.dailyStats.forEach((day, index) => {
-            const x = padding + index * barWidth;
-            const tokenHeight = (day.totalTokens / maxTokens) * chartHeight;
-            const costHeight = (day.costJPY / maxCost) * chartHeight;
+            loadingMessage.classList.add('hidden');
             
-            // トークン使用量のバー (青)
-            ctx.fillStyle = '#007bff';
-            ctx.fillRect(x + 5, padding + chartHeight - tokenHeight, barWidth * 0.4 - 10, tokenHeight);
-            
-            // コストのバー (緑)
-            ctx.fillStyle = '#28a745';
-            ctx.fillRect(x + barWidth * 0.4 + 5, padding + chartHeight - costHeight, barWidth * 0.4 - 10, costHeight);
-        });
-
-        // 軸とラベル
-        ctx.strokeStyle = '#ccc';
-        ctx.lineWidth = 1;
-        
-        // Y軸
-        ctx.beginPath();
-        ctx.moveTo(padding, padding);
-        ctx.lineTo(padding, padding + chartHeight);
-        ctx.stroke();
-        
-        // X軸
-        ctx.beginPath();
-        ctx.moveTo(padding, padding + chartHeight);
-        ctx.lineTo(padding + chartWidth, padding + chartHeight);
-        ctx.stroke();
-        
-        // 日付ラベル
-        ctx.fillStyle = '#666';
-        ctx.font = '12px sans-serif';
-        ctx.textAlign = 'center';
-        
-        this.dailyStats.forEach((day, index) => {
-            const x = padding + index * barWidth + barWidth / 2;
-            const date = new Date(day.date);
-            const label = `${date.getMonth() + 1}/${date.getDate()}`;
-            ctx.fillText(label, x, padding + chartHeight + 20);
-        });
-
-        // 凡例
-        ctx.textAlign = 'left';
-        ctx.fillStyle = '#007bff';
-        ctx.fillRect(padding, 20, 15, 15);
-        ctx.fillStyle = '#666';
-        ctx.fillText('トークン使用量', padding + 25, 32);
-        
-        ctx.fillStyle = '#28a745';
-        ctx.fillRect(padding + 150, 20, 15, 15);
-        ctx.fillStyle = '#666';
-        ctx.fillText('コスト (¥)', padding + 175, 32);
-    }
-
-    // テーブルを描画
-    renderTable() {
-        const tbody = document.getElementById('dataTableBody');
-        
-        tbody.innerHTML = this.dailyStats.map(day => `
-            <tr>
-                <td>${new Date(day.date).toLocaleDateString('ja-JP')}</td>
-                <td>${day.inputTokens.toLocaleString()}</td>
-                <td>${day.outputTokens.toLocaleString()}</td>
-                <td>${day.totalTokens.toLocaleString()}</td>
-                <td>$${day.costUSD.toFixed(2)}</td>
-                <td>¥${Math.round(day.costJPY).toLocaleString()}</td>
-                <td>${day.calls.toLocaleString()}</td>
-            </tr>
-        `).join('');
+            if (this.currentView === 'dashboard') {
+                mainDashboard.classList.remove('hidden');
+                calendarView.classList.add('hidden');
+            } else if (this.currentView === 'calendar') {
+                mainDashboard.classList.add('hidden');
+                calendarView.classList.remove('hidden');
+            }
+        }
     }
 }
 

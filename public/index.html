@@ -6,6 +6,7 @@
     <title>Clauditor - Claude Code 使用状況ダッシュボード</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <!-- ヘッダー -->
@@ -16,6 +17,16 @@
                 <span class="app-subtitle">Claude Code 使用状況ダッシュボード</span>
             </div>
             <div class="header-right">
+                <div class="view-toggle">
+                    <button id="dashboardViewBtn" class="view-btn active">
+                        <i class="material-icons">dashboard</i>
+                        <span>ダッシュボード</span>
+                    </button>
+                    <button id="calendarViewBtn" class="view-btn">
+                        <i class="material-icons">calendar_month</i>
+                        <span>カレンダー</span>
+                    </button>
+                </div>
                 <button id="darkModeToggle" class="icon-button" title="ダークモード切り替え">
                     <i class="material-icons" id="darkModeIcon">dark_mode</i>
                 </button>
@@ -26,94 +37,257 @@
         </div>
     </header>
 
-    <div class="main-layout">
-        <!-- サイドバー -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <h2>プロジェクト</h2>
-                <button id="refreshButton" class="icon-button small"><i class="material-icons">refresh</i></button>
-            </div>
-            <div class="project-list" id="projectList">
-                <div class="loading">プロジェクトを読み込み中...</div>
-            </div>
-        </aside>
+    <!-- メインコンテンツ -->
+    <main class="main-container">
+        <div id="loadingMessage" class="loading-card">
+            <div class="loading-spinner"></div>
+            <p>データを読み込み中...</p>
+        </div>
 
-        <!-- メインコンテンツ -->
-        <main class="main-content">
-            <div id="welcomeMessage" class="welcome-card">
-                <h2>ようこそ Clauditor へ</h2>
-                <p>左側のサイドバーからプロジェクトを選択してください</p>
-            </div>
-
-            <div id="loadingMessage" class="loading-card hidden">
-                <div class="loading-spinner"></div>
-                <p>データを読み込み中...</p>
-            </div>
-
-            <div id="mainDashboard" class="dashboard hidden">
-                <!-- 統計セクション -->
-                <div class="section-header">
-                    <h2>
-                        <i class="material-icons" id="statsIcon">analytics</i> 
-                        <span id="statsTitle">全プロジェクト統計</span>
-                    </h2>
-                    <div class="header-actions">
-                        <button id="backToAllProjectsButton" class="button secondary hidden">
-                            <i class="material-icons">arrow_back</i> 全プロジェクトに戻る
-                        </button>
-                    </div>
+        <!-- ダッシュボード画面 -->
+        <div id="mainDashboard" class="dashboard hidden">
+            <!-- 時間フィルター -->
+            <div class="time-filter-bar">
+                <div class="time-filter-buttons">
+                    <button class="time-filter-btn active" data-period="today">今日</button>
+                    <button class="time-filter-btn" data-period="week">今週</button>
+                    <button class="time-filter-btn" data-period="month">今月</button>
+                    <button class="time-filter-btn" data-period="year">今年</button>
+                    <button class="time-filter-btn" data-period="all">全期間</button>
                 </div>
-                <div class="stats-grid" id="mainStatsGrid">
-                    <div class="stat-card" id="statCard1">
-                        <h3><i class="material-icons">token</i> 総トークン使用量</h3>
-                        <div class="stat-value" id="statValue1">-</div>
-                        <div class="stat-projects" id="statProjects1">-</div>
-                    </div>
-                    <div class="stat-card" id="statCard2">
-                        <h3><i class="material-icons">attach_money</i> 総コスト (USD)</h3>
-                        <div class="stat-value" id="statValue2">-</div>
-                        <div class="stat-projects" id="statProjects2">-</div>
-                    </div>
-                    <div class="stat-card" id="statCard3">
-                        <h3><i class="material-icons">currency_yen</i> 総コスト (JPY)</h3>
-                        <div class="stat-value" id="statValue3">-</div>
-                        <div class="stat-projects" id="statProjects3">-</div>
-                    </div>
-                    <div class="stat-card" id="statCard4">
-                        <h3><i class="material-icons">api</i> API呼び出し回数</h3>
-                        <div class="stat-value" id="statValue4">-</div>
-                        <div class="stat-projects" id="statProjects4">-</div>
-                    </div>
-                </div>
-
-                <!-- チャートエリア -->
-                <div class="chart-container">
-                    <h3><i class="material-icons">show_chart</i> 日別使用量</h3>
-                    <canvas id="usageChart" width="800" height="400"></canvas>
-                </div>
-
-                <!-- データテーブル -->
-                <div class="table-container">
-                    <h3><i class="material-icons">table_chart</i> 詳細データ</h3>
-                    <table id="dataTable" class="data-table">
-                        <thead>
-                            <tr>
-                                <th>日付</th>
-                                <th>入力トークン</th>
-                                <th>出力トークン</th>
-                                <th>合計トークン</th>
-                                <th>コスト (USD)</th>
-                                <th>コスト (JPY)</th>
-                                <th>呼び出し回数</th>
-                            </tr>
-                        </thead>
-                        <tbody id="dataTableBody">
-                        </tbody>
-                    </table>
+                <div class="dashboard-actions">
+                    <button id="refreshButton" class="icon-button">
+                        <i class="material-icons">refresh</i>
+                    </button>
                 </div>
             </div>
-        </main>
-    </div>
+
+            <!-- 主要統計カード -->
+            <div class="stats-overview">
+                <div class="stat-card primary">
+                    <div class="stat-icon">
+                        <i class="material-icons" id="statIcon1">trending_up</i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-label" id="statLabel1">使用量</div>
+                        <div class="stat-value" id="statValue1">0</div>
+                        <div class="stat-unit" id="statUnit1">tokens</div>
+                    </div>
+                </div>
+                <div class="stat-card primary">
+                    <div class="stat-icon">
+                        <i class="material-icons" id="statIcon2">attach_money</i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-label" id="statLabel2">コスト</div>
+                        <div class="stat-value" id="statValue2">¥0</div>
+                        <div class="stat-unit" id="statUnit2">JPY</div>
+                    </div>
+                </div>
+                <div class="stat-card primary">
+                    <div class="stat-icon">
+                        <i class="material-icons" id="statIcon3">schedule</i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-label" id="statLabel3">使用時間</div>
+                        <div class="stat-value" id="statValue3">0</div>
+                        <div class="stat-unit" id="statUnit3">hours</div>
+                    </div>
+                </div>
+                <div class="stat-card primary">
+                    <div class="stat-icon">
+                        <i class="material-icons" id="statIcon4">compare_arrows</i>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-label" id="statLabel4">比較</div>
+                        <div class="stat-value" id="statValue4">0</div>
+                        <div class="stat-unit" id="statUnit4">tokens</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- チャートセクション -->
+            <div class="charts-section">
+                <div class="chart-grid">
+                    <!-- 日別使用量チャート -->
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <h3><i class="material-icons">trending_up</i> 使用量推移</h3>
+                            <div class="chart-controls">
+                                <select id="usageChartType">
+                                    <option value="tokens">トークン数</option>
+                                    <option value="cost">コスト</option>
+                                    <option value="calls">API呼び出し数</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="chart-wrapper">
+                            <canvas id="usageChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 時間分布チャート -->
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <h3><i class="material-icons">access_time</i> 時間別使用パターン</h3>
+                        </div>
+                        <div class="chart-wrapper">
+                            <canvas id="hourlyChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- プロジェクト別使用量 -->
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <h3><i class="material-icons">pie_chart</i> プロジェクト別使用量</h3>
+                        </div>
+                        <div class="chart-wrapper">
+                            <canvas id="projectChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 週別比較 -->
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <h3><i class="material-icons">compare_arrows</i> 週別比較</h3>
+                        </div>
+                        <div class="chart-wrapper">
+                            <canvas id="weeklyChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 詳細統計 -->
+            <div class="details-section">
+                <div class="detail-cards">
+                    <div class="detail-card">
+                        <h4><i class="material-icons">insights</i> 使用傾向</h4>
+                        <div class="detail-stats" id="usageInsights">
+                            <div class="insight-item">
+                                <span class="insight-label">平均日使用量</span>
+                                <span class="insight-value" id="avgDailyUsage">-</span>
+                            </div>
+                            <div class="insight-item">
+                                <span class="insight-label">最も活発な時間</span>
+                                <span class="insight-value" id="peakHour">-</span>
+                            </div>
+                            <div class="insight-item">
+                                <span class="insight-label">最も使用したプロジェクト</span>
+                                <span class="insight-value" id="topProject">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="detail-card">
+                        <h4><i class="material-icons">folder</i> プロジェクト一覧</h4>
+                        <div class="project-list-compact" id="projectListCompact">
+                            <!-- プロジェクトリストがここに表示されます -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- カレンダー画面 -->
+        <div id="calendarView" class="calendar-view hidden">
+            <!-- カレンダーヘッダー -->
+            <div class="calendar-header">
+                <div class="calendar-nav">
+                    <button id="prevMonthBtn" class="icon-button">
+                        <i class="material-icons">chevron_left</i>
+                    </button>
+                    <h2 id="calendarTitle">2024年6月</h2>
+                    <button id="nextMonthBtn" class="icon-button">
+                        <i class="material-icons">chevron_right</i>
+                    </button>
+                </div>
+                <div class="calendar-actions">
+                    <button id="todayBtn" class="button secondary">今日</button>
+                    <button id="calendarRefreshBtn" class="icon-button">
+                        <i class="material-icons">refresh</i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- カレンダーメイン -->
+            <div class="calendar-main">
+                <!-- カレンダーグリッド -->
+                <div class="calendar-grid">
+                    <div class="calendar-weekdays">
+                        <div class="weekday">日</div>
+                        <div class="weekday">月</div>
+                        <div class="weekday">火</div>
+                        <div class="weekday">水</div>
+                        <div class="weekday">木</div>
+                        <div class="weekday">金</div>
+                        <div class="weekday">土</div>
+                    </div>
+                    <div class="calendar-days" id="calendarDays">
+                        <!-- 日付セルがここに動的に生成されます -->
+                    </div>
+                </div>
+
+                <!-- サイドパネル -->
+                <div class="calendar-sidebar">
+                    <div class="selected-date-info">
+                        <h3 id="selectedDateTitle">日付を選択してください</h3>
+                        <div id="selectedDateStats" class="date-stats hidden">
+                            <div class="date-stat-item">
+                                <span class="stat-label">使用量</span>
+                                <span class="stat-value" id="selectedDateTokens">0 tokens</span>
+                            </div>
+                            <div class="date-stat-item">
+                                <span class="stat-label">コスト</span>
+                                <span class="stat-value" id="selectedDateCost">¥0</span>
+                            </div>
+                            <div class="date-stat-item">
+                                <span class="stat-label">API呼び出し</span>
+                                <span class="stat-value" id="selectedDateCalls">0 calls</span>
+                            </div>
+                            <div class="date-stat-item">
+                                <span class="stat-label">アクティブ時間</span>
+                                <span class="stat-value" id="selectedDateHours">0 hours</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="usage-legend">
+                        <h4>使用量レベル</h4>
+                        <div class="legend-items">
+                            <div class="legend-item">
+                                <div class="legend-color level-0"></div>
+                                <span>未使用</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color level-1"></div>
+                                <span>軽度</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color level-2"></div>
+                                <span>中程度</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color level-3"></div>
+                                <span>高使用</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color level-4"></div>
+                                <span>最高使用</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="project-usage-chart">
+                        <h4>選択日のプロジェクト別使用量</h4>
+                        <div class="chart-wrapper">
+                            <canvas id="dailyProjectChart" width="300" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
 
     <!-- 設定モーダル -->
     <div id="settingsModal" class="modal hidden">
