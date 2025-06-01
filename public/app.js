@@ -76,7 +76,8 @@ class AppState {
             
             // ファイルシステム変更の監視
             window.electronAPI.onFileSystemChange((event) => {
-                console.log('File system change:', event);
+                console.log('File system change detected:', event);
+                this.showAutoRefreshNotification();
                 this.refreshData();
             });
         } catch (error) {
@@ -192,9 +193,11 @@ class AppState {
 
     // データを更新
     async refreshData() {
+        console.log('🔄 Refreshing data...');
         this.setLoading(true);
         try {
             this.projects = await window.electronAPI.scanClaudeProjects();
+            console.log(`📁 Found ${this.projects.length} projects`);
             await this.loadAllProjectsData();
             
             // 初回起動時または24時間以上経過している場合は自動で為替レートを取得
@@ -967,6 +970,20 @@ class AppState {
             loadingMessage.classList.add('hidden');
             mainDashboard.classList.remove('hidden');
         }
+    }
+
+    showAutoRefreshNotification() {
+        // リフレッシュボタンにアニメーションを追加
+        const refreshButton = document.getElementById('refreshButton');
+        if (refreshButton) {
+            refreshButton.style.animation = 'spin 0.5s ease-in-out';
+            setTimeout(() => {
+                refreshButton.style.animation = '';
+            }, 500);
+        }
+        
+        // 簡易的な通知を表示
+        console.log('🔄 Data auto-refreshed due to file changes');
     }
 
     showError(message) {

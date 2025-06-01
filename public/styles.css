@@ -1027,3 +1027,13 @@ body {
         height: 50px;
     }
 }
+
+/* アニメーション */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
