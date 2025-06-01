@@ -74,6 +74,7 @@
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
+      "icon": "build/icons/icons/mac/icon.icns",
       "target": [
         {
           "target": "dmg",
@@ -92,6 +93,7 @@
       ]
     },
     "win": {
+      "icon": "build/icons/icons/win/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -122,8 +124,10 @@
           ]
         }
       ],
-      "category": "Development"
+      "category": "Development",
+      "icon": "build/icons/icons/png"
     },
+    "icon": "build/icons/icons/mac/icon.icns",
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
