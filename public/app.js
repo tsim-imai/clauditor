@@ -74,16 +74,27 @@ class AppState {
 
         // ファイルウォッチャーを開始
         try {
-            await window.electronAPI.startFileWatcher();
+            console.log('🔍 Starting file watcher...');
+            const result = await window.electronAPI.startFileWatcher();
+            console.log('✅ File watcher started:', result);
             
             // ファイルシステム変更の監視
             window.electronAPI.onFileSystemChange((event) => {
-                console.log('File system change detected:', event);
+                console.log('🔥 File system change detected:', event);
+                console.log('📂 Change type:', event.type);
+                console.log('📄 File path:', event.path);
                 this.showAutoRefreshNotification();
                 this.refreshData();
             });
+            console.log('📡 File system change listener registered');
+            
+            // デバッグ用: 5秒後にテストイベントを送信
+            setTimeout(() => {
+                console.log('🧪 Testing file system change event...');
+                this.showAutoRefreshNotification();
+            }, 5000);
         } catch (error) {
-            console.error('Failed to start file watcher:', error);
+            console.error('❌ Failed to start file watcher:', error);
         }
 
         // データを読み込み

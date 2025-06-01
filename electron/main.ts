@@ -367,23 +367,40 @@ ipcMain.handle('get-app-version', async () => {
 const startFileWatcher = () => {
   const projectsDir = path.join(os.homedir(), '.claude', 'projects');
   
+  console.log('🔍 Starting file watcher for:', projectsDir);
+  
   try {
+    // Check if directory exists
+    if (!require('fs').existsSync(projectsDir)) {
+      console.log('❌ Projects directory does not exist:', projectsDir);
+      return false;
+    }
+    
     // Watch for changes in the projects directory and all subdirectories
     fileWatcher = chokidar.watch(projectsDir, {
       ignored: /(^|[\/\\])\../, // ignore dotfiles
       persistent: true,
       ignoreInitial: true,
-      depth: 2, // Watch projects and their immediate files
+      depth: 3, // Watch projects and their immediate files (increased depth)
+      usePolling: false, // Use native file watching
+      awaitWriteFinish: {
+        stabilityThreshold: 100,
+        pollInterval: 50
+      }
     });
+    
+    console.log('👀 Chokidar watcher configured for:', projectsDir);
 
     fileWatcher
       .on('add', (filePath) => {
+        console.log('📁 File added:', filePath);
         if (filePath.endsWith('.jsonl') && mainWindow) {
-          console.log('New JSONL file detected:', filePath);
+          console.log('✅ New JSONL file detected:', filePath);
           // Clear related cache
           clearCachePattern(path.dirname(filePath));
           clearCachePattern('projects:list');
           
+          console.log('📡 Sending file-system-change event (add)');
           mainWindow.webContents.send('file-system-change', {
             type: 'file-added',
             path: filePath,
@@ -392,11 +409,13 @@ const startFileWatcher = () => {
         }
       })
       .on('change', (filePath) => {
+        console.log('📝 File changed:', filePath);
         if (filePath.endsWith('.jsonl') && mainWindow) {
-          console.log('JSONL file changed:', filePath);
+          console.log('✅ JSONL file changed:', filePath);
           // Clear related cache
           clearCachePattern(path.dirname(filePath));
           
+          console.log('📡 Sending file-system-change event (change)');
           mainWindow.webContents.send('file-system-change', {
             type: 'file-changed',
             path: filePath,
@@ -448,12 +467,17 @@ const startFileWatcher = () => {
         }
       })
       .on('error', (error) => {
-        console.error('File watcher error:', error);
+        console.error('❌ File watcher error:', error);
+      })
+      .on('ready', () => {
+        console.log('✅ File watcher is ready and monitoring changes');
       });
 
-    console.log('File watcher started for:', projectsDir);
+    console.log('✅ File watcher started for:', projectsDir);
+    return true;
   } catch (error) {
-    console.error('Failed to start file watcher:', error);
+    console.error('❌ Failed to start file watcher:', error);
+    return false;
   }
 };
 
@@ -467,8 +491,9 @@ const stopFileWatcher = () => {
 
 // Start file watcher when app is ready
 ipcMain.handle('start-file-watcher', async () => {
-  startFileWatcher();
-  return true;
+  const result = startFileWatcher();
+  console.log('📡 IPC: start-file-watcher result:', result);
+  return result;
 });
 
 // Stop file watcher
