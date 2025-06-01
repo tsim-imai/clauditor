@@ -3,38 +3,61 @@ import { useAppStore } from '../stores/useAppStore';
 import { aggregateByDate } from '../utils/dataAggregator';
 import { scanClaudeProjects, readProjectLogs } from '../utils/electronFileSystem';
 import { useEffect } from 'react';
+import { useFileSystemWatcher } from '../hooks/useFileSystemWatcher';
+import { LoadingSpinner } from './LoadingSpinner';
 
 export const Sidebar = () => {
   const { 
     projects, 
     selectedProject, 
     settings, 
+    loading,
     setProjects, 
     setSelectedProject, 
     setLogEntries, 
-    setDailyStats 
+    setDailyStats,
+    setLoading,
+    setError,
+    clearError
   } = useAppStore();
+
+  // Set up file system watcher for auto-refresh
+  const { refreshProjects, isElectron } = useFileSystemWatcher();
 
   useEffect(() => {
     // Load projects on component mount
     const loadProjects = async () => {
+      setLoading(true);
+      clearError();
+      
       try {
         const projectList = await scanClaudeProjects();
         setProjects(projectList);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to load projects:', error);
-        // Optionally show error message to user
+        setError(error.toJSON ? error.toJSON() : {
+          type: 'UNKNOWN_ERROR',
+          message: error.message || 'プロジェクトの読み込みに失敗しました',
+          timestamp: new Date(),
+        });
+      } finally {
+        setLoading(false);
       }
     };
     
     loadProjects();
-  }, [setProjects]);
+  }, [setProjects, setLoading, setError, clearError]);
 
   const handleProjectSelect = async (projectName: string) => {
     setSelectedProject(projectName);
+    setLoading(true);
+    clearError();
     
     const project = projects.find(p => p.name === projectName);
-    if (!project) return;
+    if (!project) {
+      setLoading(false);
+      return;
+    }
 
     try {
       const entries = await readProjectLogs(project.path);
@@ -42,9 +65,16 @@ export const Sidebar = () => {
       
       setLogEntries(entries);
       setDailyStats(stats);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load project logs:', error);
-      // Optionally show error message to user
+      setError(error.toJSON ? error.toJSON() : {
+        type: 'UNKNOWN_ERROR',
+        message: error.message || 'プロジェクトログの読み込みに失敗しました',
+        timestamp: new Date(),
+        context: { projectName, projectPath: project.path },
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -65,7 +95,11 @@ export const Sidebar = () => {
           </h2>
           
           <div className="space-y-2">
-            {projects.length === 0 ? (
+            {loading && projects.length === 0 ? (
+              <div className="text-center py-8">
+                <LoadingSpinner size="medium" message="プロジェクトを読み込み中..." />
+              </div>
+            ) : projects.length === 0 ? (
               <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
                 <Folder size={48} className="mx-auto mb-2 opacity-50" />
                 <p>プロジェクトが見つかりません</p>

@@ -2,13 +2,67 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
+import { createReadStream } from 'fs';
+import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
+import chokidar from 'chokidar';
 import { ProjectInfo, LogEntry } from '../src/types';
 
 const isDev = process.env.NODE_ENV === 'development';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
+let fileWatcher: chokidar.FSWatcher | null = null;
+
+// Memory-efficient processing of large JSONL files
+const processLargeJsonlFile = async (filePath: string, allEntries: LogEntry[]): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const fileStream = createReadStream(filePath, { encoding: 'utf8' });
+    const rl = createInterface({
+      input: fileStream,
+      crlfDelay: Infinity, // Handle Windows line endings
+    });
+
+    let lineCount = 0;
+    let processedCount = 0;
+    let errorCount = 0;
+
+    rl.on('line', (line) => {
+      lineCount++;
+      
+      // Skip empty lines
+      if (!line.trim()) return;
+
+      try {
+        const entry = JSON.parse(line) as LogEntry;
+        if (entry.timestamp && entry.message?.usage && entry.costUSD !== undefined) {
+          allEntries.push(entry);
+          processedCount++;
+        }
+      } catch (parseError) {
+        errorCount++;
+        if (errorCount <= 10) { // Limit error logging to avoid spam
+          console.warn(`Failed to parse line ${lineCount} in ${path.basename(filePath)}:`, parseError);
+        }
+      }
+
+      // Log progress for very large files (every 10k lines)
+      if (lineCount % 10000 === 0) {
+        console.log(`Processed ${lineCount} lines, ${processedCount} valid entries from ${path.basename(filePath)}`);
+      }
+    });
+
+    rl.on('close', () => {
+      console.log(`Completed processing ${path.basename(filePath)}: ${processedCount} entries from ${lineCount} lines (${errorCount} errors)`);
+      resolve();
+    });
+
+    rl.on('error', (error) => {
+      console.error(`Error reading file ${filePath}:`, error);
+      reject(error);
+    });
+  });
+};
 
 const createWindow = (): void => {
   mainWindow = new BrowserWindow({
@@ -39,6 +93,7 @@ const createWindow = (): void => {
   });
 
   mainWindow.on('closed', () => {
+    stopFileWatcher();
     mainWindow = null;
   });
 };
@@ -107,23 +162,44 @@ ipcMain.handle('read-project-logs', async (_, projectPath: string): Promise<LogE
     const jsonlFiles = files.filter(file => file.endsWith('.jsonl'));
     const allEntries: LogEntry[] = [];
 
-    for (const file of jsonlFiles) {
-      const filePath = path.join(projectPath, file);
-      const content = await fs.readFile(filePath, 'utf-8');
-      const lines = content.split('\n').filter(line => line.trim());
+    // Sort files by size to process largest first (better progress indication)
+    const filesWithStats = await Promise.all(
+      jsonlFiles.map(async (file) => {
+        const filePath = path.join(projectPath, file);
+        const stats = await fs.stat(filePath);
+        return { file, filePath, size: stats.size };
+      })
+    );
+    
+    const sortedFiles = filesWithStats.sort((a, b) => b.size - a.size);
+    
+    console.log(`Processing ${sortedFiles.length} JSONL files in ${path.basename(projectPath)}`);
 
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line) as LogEntry;
-          if (entry.timestamp && entry.message?.usage && entry.costUSD !== undefined) {
-            allEntries.push(entry);
+    // Process files with memory-efficient streaming for large files
+    for (const { file, filePath, size } of sortedFiles) {
+      // For large files (>10MB), use streaming approach
+      if (size > 10 * 1024 * 1024) {
+        console.log(`Processing large file with streaming: ${file} (${Math.round(size / 1024 / 1024)}MB)`);
+        await processLargeJsonlFile(filePath, allEntries);
+      } else {
+        // For smaller files, use regular approach (faster for small files)
+        const content = await fs.readFile(filePath, 'utf-8');
+        const lines = content.split('\n').filter(line => line.trim());
+
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line) as LogEntry;
+            if (entry.timestamp && entry.message?.usage && entry.costUSD !== undefined) {
+              allEntries.push(entry);
+            }
+          } catch (parseError) {
+            console.warn(`Failed to parse line in ${file}:`, line, parseError);
           }
-        } catch (parseError) {
-          console.warn(`Failed to parse line in ${file}:`, line, parseError);
         }
       }
     }
 
+    console.log(`Loaded ${allEntries.length} total log entries from ${path.basename(projectPath)}`);
     return allEntries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   } catch (error) {
     console.error('Failed to read project logs:', error);
@@ -134,6 +210,102 @@ ipcMain.handle('read-project-logs', async (_, projectPath: string): Promise<LogE
 // Get app version
 ipcMain.handle('get-app-version', async () => {
   return app.getVersion();
+});
+
+// File system watching
+const startFileWatcher = () => {
+  const projectsDir = path.join(os.homedir(), '.claude', 'projects');
+  
+  try {
+    // Watch for changes in the projects directory and all subdirectories
+    fileWatcher = chokidar.watch(projectsDir, {
+      ignored: /(^|[\/\\])\../, // ignore dotfiles
+      persistent: true,
+      ignoreInitial: true,
+      depth: 2, // Watch projects and their immediate files
+    });
+
+    fileWatcher
+      .on('add', (filePath) => {
+        if (filePath.endsWith('.jsonl') && mainWindow) {
+          console.log('New JSONL file detected:', filePath);
+          mainWindow.webContents.send('file-system-change', {
+            type: 'file-added',
+            path: filePath,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      })
+      .on('change', (filePath) => {
+        if (filePath.endsWith('.jsonl') && mainWindow) {
+          console.log('JSONL file changed:', filePath);
+          mainWindow.webContents.send('file-system-change', {
+            type: 'file-changed',
+            path: filePath,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      })
+      .on('unlink', (filePath) => {
+        if (filePath.endsWith('.jsonl') && mainWindow) {
+          console.log('JSONL file removed:', filePath);
+          mainWindow.webContents.send('file-system-change', {
+            type: 'file-removed',
+            path: filePath,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      })
+      .on('addDir', (dirPath) => {
+        // New project directory added
+        if (mainWindow && dirPath !== projectsDir) {
+          console.log('New project directory detected:', dirPath);
+          mainWindow.webContents.send('file-system-change', {
+            type: 'project-added',
+            path: dirPath,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      })
+      .on('unlinkDir', (dirPath) => {
+        // Project directory removed
+        if (mainWindow && dirPath !== projectsDir) {
+          console.log('Project directory removed:', dirPath);
+          mainWindow.webContents.send('file-system-change', {
+            type: 'project-removed',
+            path: dirPath,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      })
+      .on('error', (error) => {
+        console.error('File watcher error:', error);
+      });
+
+    console.log('File watcher started for:', projectsDir);
+  } catch (error) {
+    console.error('Failed to start file watcher:', error);
+  }
+};
+
+const stopFileWatcher = () => {
+  if (fileWatcher) {
+    fileWatcher.close();
+    fileWatcher = null;
+    console.log('File watcher stopped');
+  }
+};
+
+// Start file watcher when app is ready
+ipcMain.handle('start-file-watcher', async () => {
+  startFileWatcher();
+  return true;
+});
+
+// Stop file watcher
+ipcMain.handle('stop-file-watcher', async () => {
+  stopFileWatcher();
+  return true;
 });
 
 // Handle app protocol for deep linking (optional)

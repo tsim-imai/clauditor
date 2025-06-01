@@ -1,4 +1,5 @@
 import type { ProjectInfo, LogEntry } from '../types';
+import { ClauditorError, ErrorType, classifyError } from '../types/errors';
 
 // Check if we're running in Electron
 const isElectron = (): boolean => {
@@ -10,13 +11,29 @@ export const scanClaudeProjects = async (): Promise<ProjectInfo[]> => {
     try {
       return await window.electronAPI.scanClaudeProjects();
     } catch (error) {
-      console.error('Failed to scan Claude projects:', error);
-      throw new Error(`Failed to scan projects: ${error}`);
+      const classified = classifyError(error);
+      console.error('Failed to scan Claude projects:', classified);
+      
+      // Throw more specific error
+      if (classified.type === ErrorType.FILE_NOT_FOUND) {
+        throw new ClauditorError(
+          ErrorType.FILE_NOT_FOUND,
+          'Claude プロジェクトディレクトリが見つかりません',
+          'Claude Code を使用してプロジェクトを作成してください',
+          { path: '~/.claude/projects' }
+        );
+      }
+      
+      throw classified;
     }
   } else {
     // Fallback to mock data for web version
-    const { getMockProjects } = await import('./claudeProjectScanner');
-    return getMockProjects();
+    try {
+      const { getMockProjects } = await import('./claudeProjectScanner');
+      return getMockProjects();
+    } catch (error) {
+      throw classifyError(error);
+    }
   }
 };
 
@@ -25,14 +42,26 @@ export const readProjectLogs = async (projectPath: string): Promise<LogEntry[]> 
     try {
       return await window.electronAPI.readProjectLogs(projectPath);
     } catch (error) {
-      console.error('Failed to read project logs:', error);
-      throw new Error(`Failed to read logs: ${error}`);
+      const classified = classifyError(error);
+      console.error('Failed to read project logs:', classified);
+      
+      // Add context information
+      throw new ClauditorError(
+        classified.type,
+        classified.message,
+        classified.details,
+        { projectPath, ...classified.context }
+      );
     }
   } else {
     // Fallback to mock data for web version
-    const { generateMockLogEntries } = await import('./mockData');
-    const projectName = projectPath.split('/').pop() || 'unknown';
-    return generateMockLogEntries(projectName);
+    try {
+      const { generateMockLogEntries } = await import('./mockData');
+      const projectName = projectPath.split('/').pop() || 'unknown';
+      return generateMockLogEntries(projectName);
+    } catch (error) {
+      throw classifyError(error);
+    }
   }
 };
 

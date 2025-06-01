@@ -18,4 +18,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     
   // Platform info
   getPlatform: () => process.platform,
+
+  // File system watching
+  startFileWatcher: (): Promise<boolean> =>
+    ipcRenderer.invoke('start-file-watcher'),
+  
+  stopFileWatcher: (): Promise<boolean> =>
+    ipcRenderer.invoke('stop-file-watcher'),
+
+  // Listen to file system changes
+  onFileSystemChange: (callback: (event: any) => void) => {
+    ipcRenderer.on('file-system-change', (_, event) => callback(event));
+  },
+
+  // Remove file system change listener
+  removeFileSystemChangeListener: () => {
+    ipcRenderer.removeAllListeners('file-system-change');
+  },
 });
