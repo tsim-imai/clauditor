@@ -32,8 +32,6 @@ export const useAppStore = create<AppState>((set) => ({
     exchangeRate: 150,
     darkMode: false,
     customProjectPath: '',
-    useBackendService: false,
-    backendServiceUrl: 'http://localhost:3001',
   },
   setLogEntries: (entries) => set({ logEntries: entries }),
   setDailyStats: (stats) => set({ dailyStats: stats }),

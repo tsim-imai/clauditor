@@ -1,29 +1,28 @@
-import { contextBridge, ipcRenderer } from 'electron';
-import { ProjectInfo, LogEntry } from '../src/types';
+const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   // Project scanning
-  scanClaudeProjects: (): Promise<ProjectInfo[]> => 
+  scanClaudeProjects: () => 
     ipcRenderer.invoke('scan-claude-projects'),
   
   // Project log reading  
-  readProjectLogs: (projectPath: string): Promise<LogEntry[]> =>
+  readProjectLogs: (projectPath: string) =>
     ipcRenderer.invoke('read-project-logs', projectPath),
 
   // App info
-  getAppVersion: (): Promise<string> =>
+  getAppVersion: () =>
     ipcRenderer.invoke('get-app-version'),
     
   // Platform info
   getPlatform: () => process.platform,
 
   // File system watching
-  startFileWatcher: (): Promise<boolean> =>
+  startFileWatcher: () =>
     ipcRenderer.invoke('start-file-watcher'),
   
-  stopFileWatcher: (): Promise<boolean> =>
+  stopFileWatcher: () =>
     ipcRenderer.invoke('stop-file-watcher'),
 
   // Listen to file system changes
@@ -37,10 +36,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Show directory dialog
-  showDirectoryDialog: (): Promise<string | null> =>
+  showDirectoryDialog: () =>
     ipcRenderer.invoke('show-directory-dialog'),
 
   // Validate project path
-  validateProjectPath: (path: string): Promise<boolean> =>
+  validateProjectPath: (path: string) =>
     ipcRenderer.invoke('validate-project-path', path),
 });

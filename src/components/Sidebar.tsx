@@ -31,12 +31,17 @@ export const Sidebar = () => {
       clearError();
       
       try {
-        const projectList = await scanClaudeProjects({
-          useBackendService: settings.useBackendService,
-          backendServiceUrl: settings.backendServiceUrl,
-          customProjectPath: settings.customProjectPath,
-        });
+        console.log('Loading projects...');
+        
+        const projectList = await scanClaudeProjects();
+        
+        console.log('Loaded projects:', projectList);
+        console.log('Projects length:', projectList.length);
         setProjects(projectList);
+        
+        if (projectList.length === 0) {
+          console.warn('No projects found - this is why UI shows "projects not found"');
+        }
       } catch (error: any) {
         console.error('Failed to load projects:', error);
         setError(error.toJSON ? error.toJSON() : {
@@ -50,7 +55,7 @@ export const Sidebar = () => {
     };
     
     loadProjects();
-  }, [setProjects, setLoading, setError, clearError, settings.useBackendService, settings.backendServiceUrl, settings.customProjectPath]);
+  }, [setProjects, setLoading, setError, clearError, settings.customProjectPath]);
 
   const handleProjectSelect = async (projectName: string) => {
     setSelectedProject(projectName);
@@ -64,11 +69,7 @@ export const Sidebar = () => {
     }
 
     try {
-      const entries = await getProjectEntries(project, {
-        useBackendService: settings.useBackendService,
-        backendServiceUrl: settings.backendServiceUrl,
-        customProjectPath: settings.customProjectPath,
-      });
+      const entries = await getProjectEntries(project);
       const stats = aggregateByDate(entries, settings.exchangeRate);
       
       setLogEntries(entries);

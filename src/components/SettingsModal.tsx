@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { X, Folder, AlertTriangle, Check } from 'lucide-react';
 import { useAppStore } from '../stores/useAppStore';
 import { validateProjectPath } from '../utils/hybridFileSystem';
-import { BackendModeToggle } from './BackendModeToggle';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -30,10 +29,7 @@ export const SettingsModal = ({ isOpen, onClose }: SettingsModalProps) => {
     }
 
     try {
-      const isValid = await validateProjectPath(path, {
-        useBackendService: localSettings.useBackendService,
-        backendServiceUrl: localSettings.backendServiceUrl,
-      });
+      const isValid = await validateProjectPath(path);
       
       setPathValidation({
         isValid,
@@ -120,40 +116,6 @@ export const SettingsModal = ({ isOpen, onClose }: SettingsModalProps) => {
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {/* Backend Mode Toggle */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              ファイルアクセス方式
-            </label>
-            <BackendModeToggle />
-            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              Electronモード: ネイティブファイルアクセス（推奨）<br />
-              バックエンドモード: サーバー経由でファイルアクセス
-            </p>
-          </div>
-
-          {/* Backend Service URL (only when backend mode is enabled) */}
-          {localSettings.useBackendService && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                バックエンドサービスURL
-              </label>
-              <input
-                type="url"
-                value={localSettings.backendServiceUrl}
-                onChange={(e) => setLocalSettings(prev => ({
-                  ...prev,
-                  backendServiceUrl: e.target.value
-                }))}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="http://localhost:3001"
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                バックエンドサーバーのベースURL
-              </p>
-            </div>
-          )}
-
           {/* Exchange Rate */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

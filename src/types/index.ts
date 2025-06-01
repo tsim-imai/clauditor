@@ -21,8 +21,6 @@ export interface AppSettings {
   exchangeRate: number;
   darkMode: boolean;
   customProjectPath: string;
-  useBackendService: boolean;
-  backendServiceUrl: string;
 }
 
 export interface ProjectInfo {
