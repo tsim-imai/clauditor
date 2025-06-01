@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
-import { createReadStream } from 'fs';
+import { createReadStream, existsSync, readdirSync } from 'fs';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import chokidar from 'chokidar';
@@ -368,28 +368,63 @@ const startFileWatcher = () => {
   const projectsDir = path.join(os.homedir(), '.claude', 'projects');
   
   console.log('🔍 Starting file watcher for:', projectsDir);
+  console.log('🔍 Home directory:', os.homedir());
+  console.log('🔍 Full projects path:', projectsDir);
   
   try {
     // Check if directory exists
-    if (!require('fs').existsSync(projectsDir)) {
+    const dirExists = existsSync(projectsDir);
+    console.log('🔍 Projects directory exists:', dirExists);
+    
+    if (!dirExists) {
       console.log('❌ Projects directory does not exist:', projectsDir);
+      
+      // Try to list what's in the .claude directory
+      const claudeDir = path.join(os.homedir(), '.claude');
+      console.log('🔍 Checking .claude directory:', claudeDir);
+      try {
+        const claudeDirExists = existsSync(claudeDir);
+        console.log('🔍 .claude directory exists:', claudeDirExists);
+        if (claudeDirExists) {
+          const contents = readdirSync(claudeDir);
+          console.log('🔍 .claude directory contents:', contents);
+        }
+      } catch (err) {
+        console.log('❌ Error checking .claude directory:', err.message);
+      }
+      
       return false;
     }
     
     // Watch for changes in the projects directory and all subdirectories
+    console.log('👀 Setting up Chokidar with aggressive polling...');
     fileWatcher = chokidar.watch(projectsDir, {
-      ignored: /(^|[\/\\])\../, // ignore dotfiles
+      ignored: /^\./, // Only ignore files starting with dot
       persistent: true,
-      ignoreInitial: true,
-      depth: 3, // Watch projects and their immediate files (increased depth)
-      usePolling: false, // Use native file watching
+      ignoreInitial: false, // Detect initial files too
+      depth: 99,
+      usePolling: true, // Force polling mode
+      interval: 2000, // Poll every 2 seconds (less frequent)
+      binaryInterval: 2000,
       awaitWriteFinish: {
-        stabilityThreshold: 100,
-        pollInterval: 50
-      }
+        stabilityThreshold: 1000, // Wait 1 second after last change
+        pollInterval: 100
+      },
+      followSymlinks: true,
+      atomic: false, // Disable atomic writes detection
+      alwaysStat: true, // Always get file stats
+      ignorePermissionErrors: false
     });
     
     console.log('👀 Chokidar watcher configured for:', projectsDir);
+    console.log('👀 Chokidar options:', {
+      ignored: /^\./, 
+      persistent: true,
+      ignoreInitial: false,
+      depth: 99,
+      usePolling: true,
+      interval: 500
+    });
 
     fileWatcher
       .on('add', (filePath) => {
@@ -406,6 +441,8 @@ const startFileWatcher = () => {
             path: filePath,
             timestamp: new Date().toISOString(),
           });
+        } else {
+          console.log('📁 Non-JSONL file added (ignored):', filePath);
         }
       })
       .on('change', (filePath) => {
@@ -421,6 +458,14 @@ const startFileWatcher = () => {
             path: filePath,
             timestamp: new Date().toISOString(),
           });
+        } else {
+          console.log('📝 Non-JSONL file changed (ignored):', filePath);
+        }
+      })
+      .on('raw', (event, path, details) => {
+        // Only log JSONL file events to reduce noise
+        if (path && path.endsWith('.jsonl')) {
+          console.log('🔍 Raw JSONL event:', event, 'path:', path);
         }
       })
       .on('unlink', (filePath) => {
@@ -471,12 +516,30 @@ const startFileWatcher = () => {
       })
       .on('ready', () => {
         console.log('✅ File watcher is ready and monitoring changes');
+        console.log('👀 Watcher is now actively monitoring for file changes...');
+        
+        // List currently watched paths for debugging
+        const watchedPaths = fileWatcher?.getWatched();
+        if (watchedPaths) {
+          console.log('👀 Currently watched directories:', Object.keys(watchedPaths));
+        }
       });
 
     console.log('✅ File watcher started for:', projectsDir);
+    
+    // Verify the watcher was created successfully
+    if (!fileWatcher) {
+      console.error('❌ File watcher object is null after creation');
+      return false;
+    }
+    
+    console.log('✅ File watcher object created successfully');
     return true;
   } catch (error) {
     console.error('❌ Failed to start file watcher:', error);
+    console.error('❌ Error type:', error.constructor.name);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error stack:', error.stack);
     return false;
   }
 };
@@ -491,8 +554,21 @@ const stopFileWatcher = () => {
 
 // Start file watcher when app is ready
 ipcMain.handle('start-file-watcher', async () => {
+  console.log('📡 IPC: start-file-watcher called');
+  
+  // Check if file watcher is already running
+  if (fileWatcher) {
+    console.log('⚠️ File watcher already exists, stopping previous instance');
+    fileWatcher.close();
+    fileWatcher = null;
+  }
+  
   const result = startFileWatcher();
   console.log('📡 IPC: start-file-watcher result:', result);
+  
+  // Additional debugging info
+  console.log('📡 IPC: fileWatcher exists after start:', !!fileWatcher);
+  
   return result;
 });
 
@@ -500,6 +576,63 @@ ipcMain.handle('start-file-watcher', async () => {
 ipcMain.handle('stop-file-watcher', async () => {
   stopFileWatcher();
   return true;
+});
+
+// Get file watcher status
+ipcMain.handle('get-file-watcher-status', async () => {
+  const projectsDir = path.join(os.homedir(), '.claude', 'projects');
+  const dirExists = existsSync(projectsDir);
+  
+  return {
+    isWatching: !!fileWatcher,
+    projectsDir,
+    dirExists,
+    watcherReady: fileWatcher ? true : false
+  };
+});
+
+// Test file watcher by creating a test file
+ipcMain.handle('test-file-watcher', async () => {
+  const projectsDir = path.join(os.homedir(), '.claude', 'projects');
+  const testDir = path.join(projectsDir, 'test-watcher');
+  const testFile = path.join(testDir, 'test.jsonl');
+  
+  try {
+    console.log('🧪 Testing file watcher by creating test file...');
+    
+    // Create test directory if it doesn't exist
+    if (!existsSync(testDir)) {
+      await fs.mkdir(testDir, { recursive: true });
+      console.log('🧪 Created test directory:', testDir);
+    }
+    
+    // Create a test JSONL file
+    const testContent = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      message: { usage: { input_tokens: 100, output_tokens: 200 } },
+      costUSD: 0.01,
+      test: true
+    }) + '\n';
+    
+    await fs.writeFile(testFile, testContent);
+    console.log('🧪 Created test file:', testFile);
+    
+    // Clean up after 5 seconds
+    setTimeout(async () => {
+      try {
+        await fs.unlink(testFile);
+        await fs.rmdir(testDir);
+        console.log('🧪 Cleaned up test files');
+      } catch (cleanupError) {
+        console.log('🧪 Cleanup error (ignored):', cleanupError.message);
+      }
+    }, 5000);
+    
+    return { success: true, testFile };
+  } catch (error) {
+    console.error('🧪 Test file watcher error:', error);
+    return { success: false, error: error.message };
+  }
 });
 
 // Show directory dialog
@@ -592,7 +725,7 @@ ipcMain.handle('set-mini-mode', async (_, enabled: boolean) => {
       x: currentBounds.x,
       y: currentBounds.y,
       width: 420,
-      height: 340
+      height: 348
     }, true);
     
     mainWindow.setAlwaysOnTop(true, 'floating');
@@ -603,7 +736,7 @@ ipcMain.handle('set-mini-mode', async (_, enabled: boolean) => {
       console.log('After mini mode - Current size:', mainWindow?.getBounds());
     }, 100);
     
-    console.log('Entering mini mode, setting size to 420x340');
+    console.log('Entering mini mode, setting size to 420x348');
   } else {
     // Set normal mode: normal size, not always on top
     console.log('Before normal mode - Current size:', mainWindow.getBounds());

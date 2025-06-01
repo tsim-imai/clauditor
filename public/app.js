@@ -22,6 +22,7 @@ class AppState {
         this.error = null;
         this.isMiniMode = false;
         this.miniChart = null;
+        this.refreshDebounceTimer = null;
         
         this.loadSettings();
         this.initializeApp();
@@ -75,18 +76,33 @@ class AppState {
         // ファイルウォッチャーを開始
         try {
             console.log('🔍 Starting file watcher...');
+            console.log('🔧 Checking electronAPI availability:', !!window.electronAPI);
+            console.log('🔧 Checking startFileWatcher method:', !!window.electronAPI?.startFileWatcher);
+            console.log('🔧 Checking onFileSystemChange method:', !!window.electronAPI?.onFileSystemChange);
+            
+            if (!window.electronAPI || !window.electronAPI.startFileWatcher) {
+                throw new Error('electronAPI or startFileWatcher method not available');
+            }
+            
             const result = await window.electronAPI.startFileWatcher();
             console.log('✅ File watcher started:', result);
             
+            if (!result) {
+                console.warn('⚠️ File watcher returned false - check Electron main process logs');
+                console.warn('⚠️ Press Ctrl+Shift+F to run detailed diagnostics');
+            }
+            
             // ファイルシステム変更の監視
-            window.electronAPI.onFileSystemChange((event) => {
-                console.log('🔥 File system change detected:', event);
-                console.log('📂 Change type:', event.type);
-                console.log('📄 File path:', event.path);
-                this.showAutoRefreshNotification();
-                this.refreshData();
-            });
-            console.log('📡 File system change listener registered');
+            if (window.electronAPI.onFileSystemChange) {
+                window.electronAPI.onFileSystemChange((event) => {
+                    console.log('🔥 File system change detected:', event.type, event.path);
+                    this.showAutoRefreshNotification();
+                    this.debouncedRefreshData();
+                });
+                console.log('📡 File system change listener registered');
+            } else {
+                console.error('❌ onFileSystemChange method not available');
+            }
             
             // デバッグ用: 5秒後にテストイベントを送信
             setTimeout(() => {
@@ -95,6 +111,8 @@ class AppState {
             }, 5000);
         } catch (error) {
             console.error('❌ Failed to start file watcher:', error);
+            console.error('❌ Error details:', error.message);
+            console.error('❌ Error stack:', error.stack);
         }
 
         // データを読み込み
@@ -147,6 +165,15 @@ class AppState {
         // 最小ウィンドウモード終了
         document.getElementById('exitMiniMode').addEventListener('click', () => {
             this.exitMiniMode();
+        });
+
+        // デバッグ用: Ctrl+Shift+F でファイル監視状態をチェック
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+                this.debugFileWatcher();
+            } else if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+                this.testFileWatcher();
+            }
         });
 
         // 時間フィルターボタン
@@ -212,6 +239,17 @@ class AppState {
         document.getElementById('calendarRefreshBtn').addEventListener('click', () => {
             this.refreshData();
         });
+    }
+
+    // デバウンス付きデータ更新（連続する更新を制限）
+    debouncedRefreshData() {
+        if (this.refreshDebounceTimer) {
+            clearTimeout(this.refreshDebounceTimer);
+        }
+        
+        this.refreshDebounceTimer = setTimeout(() => {
+            this.refreshData();
+        }, 2000); // 2秒待ってから更新
     }
 
     // データを更新
@@ -1474,15 +1512,24 @@ class AppState {
     updateMiniMode() {
         if (!this.isMiniMode) return;
         
-        // 過去24時間のトークン数を計算
-        const totalTokens = this.getLast24HoursTokens();
+        // 過去24時間のデータを取得
+        const stats = this.getLast24HoursStats();
         
         // トークン数を表示（K単位で表示）
-        const tokenDisplay = totalTokens >= 1000 ? 
-            `${(totalTokens / 1000).toFixed(1)}K` : 
-            totalTokens.toString();
-        
+        const tokenDisplay = stats.tokens >= 1000 ? 
+            `${(stats.tokens / 1000).toFixed(1)}K` : 
+            stats.tokens.toString();
         document.getElementById('miniTokenValue').textContent = tokenDisplay;
+        
+        // コストを表示（JPY単位）
+        const costDisplay = `¥${Math.round(stats.cost)}`;
+        document.getElementById('miniCostValue').textContent = costDisplay;
+        
+        // 使用時間を表示
+        const timeDisplay = stats.hours >= 1 ? 
+            `${stats.hours.toFixed(1)}h` : 
+            `${Math.round(stats.hours * 60)}m`;
+        document.getElementById('miniTimeValue').textContent = timeDisplay;
         
         // グラフを更新
         this.updateMiniChart();
@@ -1599,17 +1646,46 @@ class AppState {
         return dayData.hourlyUsage[hour] || 0;
     }
 
-    getLast24HoursTokens() {
+    getLast24HoursStats() {
         const now = new Date();
+        const endTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        
+        // 過去24時間のエントリをフィルタリング
+        const last24HourEntries = this.allLogEntries.filter(entry => {
+            const entryTime = new Date(entry.timestamp);
+            return entryTime >= endTime && entryTime <= now;
+        });
+        
+        // 統計を計算
         let totalTokens = 0;
+        let totalCostJPY = 0;
+        const uniqueHours = new Set();
         
-        // 過去24時間分のトークンを合計
-        for (let i = 0; i < 24; i++) {
-            const time = new Date(now.getTime() - i * 60 * 60 * 1000);
-            totalTokens += this.getHourlyTokensForTime(time);
-        }
+        last24HourEntries.forEach(entry => {
+            if (entry.message?.usage) {
+                const inputTokens = entry.message.usage.input_tokens || 0;
+                const outputTokens = entry.message.usage.output_tokens || 0;
+                totalTokens += inputTokens + outputTokens;
+            }
+            
+            if (entry.costUSD) {
+                totalCostJPY += entry.costUSD * this.settings.exchangeRate;
+            }
+            
+            // 使用時間の計算（時間単位でユニークな時間をカウント）
+            const hour = new Date(entry.timestamp).toISOString().slice(0, 13);
+            uniqueHours.add(hour);
+        });
         
-        return totalTokens;
+        return {
+            tokens: totalTokens,
+            cost: totalCostJPY,
+            hours: uniqueHours.size
+        };
+    }
+    
+    getLast24HoursTokens() {
+        return this.getLast24HoursStats().tokens;
     }
 
     updateMiniChart() {
@@ -1624,6 +1700,66 @@ class AppState {
             this.miniChart.destroy();
             this.miniChart = null;
         }
+    }
+
+    // デバッグ用メソッド
+    async debugFileWatcher() {
+        console.log('🔧 === FILE WATCHER DEBUG ===');
+        console.log('🔧 electronAPI available:', !!window.electronAPI);
+        console.log('🔧 startFileWatcher method:', !!window.electronAPI?.startFileWatcher);
+        console.log('🔧 onFileSystemChange method:', !!window.electronAPI?.onFileSystemChange);
+        console.log('🔧 getFileWatcherStatus method:', !!window.electronAPI?.getFileWatcherStatus);
+        
+        try {
+            // Get current status
+            if (window.electronAPI.getFileWatcherStatus) {
+                const status = await window.electronAPI.getFileWatcherStatus();
+                console.log('🔧 Current file watcher status:', status);
+            }
+            
+            console.log('🔧 Attempting to restart file watcher...');
+            const result = await window.electronAPI.startFileWatcher();
+            console.log('🔧 Restart result:', result);
+            
+            // Get status after restart
+            if (window.electronAPI.getFileWatcherStatus) {
+                const statusAfter = await window.electronAPI.getFileWatcherStatus();
+                console.log('🔧 File watcher status after restart:', statusAfter);
+            }
+            
+            // Test notification
+            console.log('🔧 Testing auto-refresh notification...');
+            this.showAutoRefreshNotification();
+            
+            console.log('🔧 === DEBUG COMPLETE ===');
+            console.log('🔧 Use Ctrl+Shift+F to run this debug again');
+            console.log('🔧 Use Ctrl+Shift+T to test file watcher');
+        } catch (error) {
+            console.error('🔧 Debug error:', error);
+        }
+    }
+
+    // ファイル監視テスト用メソッド
+    async testFileWatcher() {
+        console.log('🧪 === FILE WATCHER TEST ===');
+        try {
+            if (window.electronAPI.testFileWatcher) {
+                console.log('🧪 Creating test file to trigger file watcher...');
+                const result = await window.electronAPI.testFileWatcher();
+                console.log('🧪 Test result:', result);
+                
+                if (result.success) {
+                    console.log('🧪 Test file created. Watch for file change events in the next few seconds...');
+                } else {
+                    console.error('🧪 Test failed:', result.error);
+                }
+            } else {
+                console.error('🧪 testFileWatcher method not available');
+            }
+        } catch (error) {
+            console.error('🧪 Test error:', error);
+        }
+        console.log('🧪 === TEST COMPLETE ===');
     }
 }
 
