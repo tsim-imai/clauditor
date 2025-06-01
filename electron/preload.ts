@@ -53,4 +53,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     
   getWindowState: () =>
     ipcRenderer.invoke('get-window-state'),
+
+  // File watcher status
+  getFileWatcherStatus: () =>
+    ipcRenderer.invoke('get-file-watcher-status'),
+
+  // Test file watcher
+  testFileWatcher: () =>
+    ipcRenderer.invoke('test-file-watcher'),
 });

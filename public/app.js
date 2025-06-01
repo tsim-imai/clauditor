@@ -248,14 +248,19 @@ class AppState {
         }
         
         this.refreshDebounceTimer = setTimeout(() => {
-            this.refreshData();
+            this.refreshData(true); // サイレント更新
         }, 2000); // 2秒待ってから更新
     }
 
     // データを更新
-    async refreshData() {
-        console.log('🔄 Refreshing data...');
-        this.setLoading(true);
+    async refreshData(silent = false) {
+        console.log('🔄 Refreshing data...', silent ? '(silent)' : '');
+        
+        // 自動更新の場合はローディング表示をスキップ
+        if (!silent) {
+            this.setLoading(true);
+        }
+        
         try {
             this.projects = await window.electronAPI.scanClaudeProjects();
             console.log(`📁 Found ${this.projects.length} projects`);
@@ -267,7 +272,13 @@ class AppState {
             // 現在の期間でフィルタリング
             this.filterDataByPeriod();
             this.prepareDailyUsageData();
-            this.updateDashboard();
+            
+            // サイレント更新の場合はスムーズな更新を実行
+            if (silent) {
+                this.updateDashboardSilent();
+            } else {
+                this.updateDashboard();
+            }
             
             if (this.currentView === 'calendar') {
                 this.renderCalendar();
@@ -279,9 +290,13 @@ class AppState {
             }
         } catch (error) {
             console.error('Failed to refresh data:', error);
-            this.showError('データの読み込みに失敗しました: ' + error.message);
+            if (!silent) {
+                this.showError('データの読み込みに失敗しました: ' + error.message);
+            }
         } finally {
-            this.setLoading(false);
+            if (!silent) {
+                this.setLoading(false);
+            }
         }
     }
 
@@ -357,6 +372,14 @@ class AppState {
     updateDashboard() {
         this.updateStatsOverview();
         this.createCharts();
+        this.updateInsights();
+        this.updateProjectList();
+    }
+    
+    // サイレント更新（チカチカを防ぐ）
+    updateDashboardSilent() {
+        this.updateStatsOverview();
+        this.updateChartsSilent();
         this.updateInsights();
         this.updateProjectList();
     }
@@ -562,6 +585,14 @@ class AppState {
         this.createProjectChart();
         this.createWeeklyChart();
     }
+    
+    // チャートをサイレント更新（再作成せずデータのみ更新）
+    updateChartsSilent() {
+        this.updateUsageChartSilent();
+        this.updateHourlyChartSilent();
+        this.updateProjectChartSilent();
+        this.updateWeeklyChartSilent();
+    }
 
     // 使用量推移チャート
     createUsageChart() {
@@ -636,6 +667,44 @@ class AppState {
             }
         });
     }
+    
+    // 使用量推移チャートのサイレント更新
+    updateUsageChartSilent() {
+        if (!this.charts.usage) {
+            this.createUsageChart();
+            return;
+        }
+        
+        const dailyData = this.aggregateDataByDay(this.filteredEntries);
+        const chartType = document.getElementById('usageChartType').value;
+        
+        let data, label, color;
+        switch (chartType) {
+            case 'tokens':
+                data = dailyData.map(d => d.totalTokens);
+                label = 'トークン数';
+                color = '#3b82f6';
+                break;
+            case 'cost':
+                data = dailyData.map(d => d.costJPY);
+                label = 'コスト (¥)';
+                color = '#10b981';
+                break;
+            case 'calls':
+                data = dailyData.map(d => d.calls);
+                label = 'API呼び出し数';
+                color = '#f59e0b';
+                break;
+        }
+        
+        // データを更新（チャートを再作成せず）
+        this.charts.usage.data.labels = dailyData.map(d => new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' }));
+        this.charts.usage.data.datasets[0].data = data;
+        this.charts.usage.data.datasets[0].label = label;
+        this.charts.usage.data.datasets[0].borderColor = color;
+        this.charts.usage.data.datasets[0].backgroundColor = color + '20';
+        this.charts.usage.update('none'); // アニメーションなしで更新
+    }
 
     // 時間別使用パターンチャート
     createHourlyChart() {
@@ -689,6 +758,20 @@ class AppState {
             }
         });
     }
+    
+    // 時間別使用パターンチャートのサイレント更新
+    updateHourlyChartSilent() {
+        if (!this.charts.hourly) {
+            this.createHourlyChart();
+            return;
+        }
+        
+        const hourlyData = this.aggregateDataByHour(this.filteredEntries);
+        
+        // データを更新（チャートを再作成せず）
+        this.charts.hourly.data.datasets[0].data = hourlyData;
+        this.charts.hourly.update('none'); // アニメーションなしで更新
+    }
 
     // プロジェクト別使用量チャート
     createProjectChart() {
@@ -727,6 +810,23 @@ class AppState {
                 }
             }
         });
+    }
+    
+    // プロジェクト別使用量チャートのサイレント更新
+    updateProjectChartSilent() {
+        if (!this.charts.project) {
+            this.createProjectChart();
+            return;
+        }
+        
+        const projectData = this.aggregateDataByProject(this.filteredEntries);
+        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'];
+        
+        // データを更新（チャートを再作成せず）
+        this.charts.project.data.labels = projectData.map(d => d.project);
+        this.charts.project.data.datasets[0].data = projectData.map(d => d.totalTokens);
+        this.charts.project.data.datasets[0].backgroundColor = colors.slice(0, projectData.length);
+        this.charts.project.update('none'); // アニメーションなしで更新
     }
 
     // 週別比較チャート
@@ -795,6 +895,23 @@ class AppState {
                 }
             }
         });
+    }
+    
+    // 週別比較チャートのサイレント更新
+    updateWeeklyChartSilent() {
+        if (!this.charts.weekly) {
+            this.createWeeklyChart();
+            return;
+        }
+        
+        const weeklyData = this.aggregateDataByWeek(this.filteredEntries);
+        const currentWeek = weeklyData[weeklyData.length - 1];
+        const previousWeek = weeklyData[weeklyData.length - 2];
+        
+        // データを更新（チャートを再作成せず）
+        this.charts.weekly.data.datasets[0].data = currentWeek ? currentWeek.dailyTokens : new Array(7).fill(0);
+        this.charts.weekly.data.datasets[1].data = previousWeek ? previousWeek.dailyTokens : new Array(7).fill(0);
+        this.charts.weekly.update('none'); // アニメーションなしで更新
     }
 
     // 日別データ集計
