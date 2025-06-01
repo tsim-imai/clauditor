@@ -46,4 +46,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Fetch exchange rate
   fetchExchangeRate: () =>
     ipcRenderer.invoke('fetch-exchange-rate'),
+
+  // Mini window mode
+  setMiniMode: (enabled: boolean) =>
+    ipcRenderer.invoke('set-mini-mode', enabled),
+    
+  getWindowState: () =>
+    ipcRenderer.invoke('get-window-state'),
 });

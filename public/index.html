@@ -30,6 +30,9 @@
                 <button id="darkModeToggle" class="icon-button" title="ダークモード切り替え">
                     <i class="material-icons" id="darkModeIcon">dark_mode</i>
                 </button>
+                <button id="miniModeToggle" class="icon-button" title="最小ウィンドウモード">
+                    <i class="material-icons">picture_in_picture_alt</i>
+                </button>
                 <button id="settingsButton" class="icon-button" title="設定">
                     <i class="material-icons">settings</i>
                 </button>
@@ -326,6 +329,25 @@
             <div class="modal-footer">
                 <button id="saveSettings" class="button primary">保存</button>
                 <button id="cancelSettings" class="button secondary">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 最小ウィンドウモード -->
+    <div id="miniMode" class="mini-mode hidden">
+        <div class="mini-header">
+            <span class="mini-title">Clauditor</span>
+            <button id="exitMiniMode" class="mini-close-btn" title="通常モードに戻る">
+                <i class="material-icons">fullscreen</i>
+            </button>
+        </div>
+        <div class="mini-content">
+            <div class="mini-stat">
+                <div class="mini-stat-label">過去24時間のトークン</div>
+                <div class="mini-stat-value" id="miniTokenValue">0</div>
+            </div>
+            <div class="mini-chart-container">
+                <canvas id="miniChart"></canvas>
             </div>
         </div>
     </div>

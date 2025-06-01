@@ -167,10 +167,11 @@ const processLargeJsonlFile = async (filePath: string, allEntries: LogEntry[]): 
 
 const createWindow = (): void => {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1400,
+    height: 900,
     minWidth: 700,
     minHeight: 600,
+    resizable: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -202,6 +203,9 @@ const createWindow = (): void => {
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+    const bounds = mainWindow?.getBounds();
+    console.log('Window ready, size:', bounds?.width, 'x', bounds?.height);
+    console.log('Window resizable:', mainWindow?.isResizable());
   });
 
   mainWindow.on('closed', () => {
@@ -542,6 +546,79 @@ ipcMain.handle('fetch-exchange-rate', async () => {
       };
     }
   }
+});
+
+// Mini window mode handlers
+ipcMain.handle('set-mini-mode', async (_, enabled: boolean) => {
+  if (!mainWindow) return false;
+  
+  if (enabled) {
+    // Set mini mode: small size, always on top
+    const currentBounds = mainWindow.getBounds();
+    console.log('Before mini mode - Current size:', currentBounds);
+    
+    mainWindow.setResizable(true); // まずリサイズ可能にする
+    
+    // 最小サイズ制約を一時的に削除
+    mainWindow.setMinimumSize(200, 150);
+    
+    // setBoundsでより確実にサイズを設定
+    mainWindow.setBounds({
+      x: currentBounds.x,
+      y: currentBounds.y,
+      width: 420,
+      height: 340
+    }, true);
+    
+    mainWindow.setAlwaysOnTop(true, 'floating');
+    mainWindow.setResizable(false);
+    
+    // サイズ設定を確認
+    setTimeout(() => {
+      console.log('After mini mode - Current size:', mainWindow?.getBounds());
+    }, 100);
+    
+    console.log('Entering mini mode, setting size to 420x340');
+  } else {
+    // Set normal mode: normal size, not always on top
+    console.log('Before normal mode - Current size:', mainWindow.getBounds());
+    
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setResizable(true);
+    
+    // 最小サイズ制約を復元
+    mainWindow.setMinimumSize(700, 600);
+    
+    // setBoundsでより確実にサイズを設定
+    mainWindow.setBounds({
+      width: 1400,
+      height: 900
+    }, true);
+    
+    mainWindow.center(); // ウィンドウを中央に配置
+    
+    // サイズ設定を確認
+    setTimeout(() => {
+      console.log('After normal mode - Current size:', mainWindow?.getBounds());
+    }, 100);
+    
+    console.log('Exiting mini mode, setting size to 1400x900');
+  }
+  
+  return true;
+});
+
+// Get current window state
+ipcMain.handle('get-window-state', async () => {
+  if (!mainWindow) return null;
+  
+  const bounds = mainWindow.getBounds();
+  return {
+    alwaysOnTop: mainWindow.isAlwaysOnTop(),
+    width: bounds.width,
+    height: bounds.height,
+    isMiniMode: bounds.width <= 420
+  };
 });
 
 // Handle app protocol for deep linking (optional)

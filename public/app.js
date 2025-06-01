@@ -20,6 +20,8 @@ class AppState {
         };
         this.loading = false;
         this.error = null;
+        this.isMiniMode = false;
+        this.miniChart = null;
         
         this.loadSettings();
         this.initializeApp();
@@ -126,6 +128,16 @@ class AppState {
             this.refreshData();
         });
 
+        // 最小ウィンドウモード切り替え
+        document.getElementById('miniModeToggle').addEventListener('click', () => {
+            this.toggleMiniMode();
+        });
+
+        // 最小ウィンドウモード終了
+        document.getElementById('exitMiniMode').addEventListener('click', () => {
+            this.exitMiniMode();
+        });
+
         // 時間フィルターボタン
         document.querySelectorAll('.time-filter-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -210,6 +222,11 @@ class AppState {
             
             if (this.currentView === 'calendar') {
                 this.renderCalendar();
+            }
+            
+            // 最小ウィンドウモードの場合は更新
+            if (this.isMiniMode) {
+                this.updateMiniMode();
             }
         } catch (error) {
             console.error('Failed to refresh data:', error);
@@ -1119,18 +1136,23 @@ class AppState {
                     costJPY: 0,
                     calls: 0,
                     activeHours: new Set(),
-                    projects: new Set()
+                    projects: new Set(),
+                    hourlyUsage: new Array(24).fill(0)
                 });
             }
 
             const daily = this.dailyUsageData.get(date);
+            const hour = new Date(entry.timestamp).getHours();
+            
             if (entry.message && entry.message.usage) {
-                daily.totalTokens += (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
+                const tokens = (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
+                daily.totalTokens += tokens;
+                daily.hourlyUsage[hour] += tokens;
             }
             daily.costUSD += entry.costUSD || 0;
             daily.costJPY += (entry.costUSD || 0) * this.settings.exchangeRate;
             daily.calls += 1;
-            daily.activeHours.add(new Date(entry.timestamp).getHours());
+            daily.activeHours.add(hour);
             if (entry.projectName) {
                 daily.projects.add(entry.projectName);
             }
@@ -1389,6 +1411,207 @@ class AppState {
                 mainDashboard.classList.add('hidden');
                 calendarView.classList.remove('hidden');
             }
+        }
+    }
+
+    // 最小ウィンドウモード関連メソッド
+    async toggleMiniMode() {
+        if (this.isMiniMode) {
+            await this.exitMiniMode();
+        } else {
+            await this.enterMiniMode();
+        }
+    }
+
+    async enterMiniMode() {
+        try {
+            // Electronウィンドウを最小サイズに変更
+            await window.electronAPI.setMiniMode(true);
+            
+            // UIを最小モードに切り替え
+            document.getElementById('miniMode').classList.remove('hidden');
+            document.querySelector('.header').classList.add('hidden');
+            document.querySelector('.main-container').classList.add('hidden');
+            
+            this.isMiniMode = true;
+            this.updateMiniMode();
+            this.createMiniChart();
+        } catch (error) {
+            console.error('Failed to enter mini mode:', error);
+            this.showError('最小ウィンドウモードに切り替えできませんでした');
+        }
+    }
+
+    async exitMiniMode() {
+        try {
+            // Electronウィンドウを通常サイズに戻す
+            await window.electronAPI.setMiniMode(false);
+            
+            // UIを通常モードに戻す
+            document.getElementById('miniMode').classList.add('hidden');
+            document.querySelector('.header').classList.remove('hidden');
+            document.querySelector('.main-container').classList.remove('hidden');
+            
+            this.isMiniMode = false;
+            this.destroyMiniChart();
+        } catch (error) {
+            console.error('Failed to exit mini mode:', error);
+            this.showError('通常モードに戻すことができませんでした');
+        }
+    }
+
+    updateMiniMode() {
+        if (!this.isMiniMode) return;
+        
+        // 過去24時間のトークン数を計算
+        const totalTokens = this.getLast24HoursTokens();
+        
+        // トークン数を表示（K単位で表示）
+        const tokenDisplay = totalTokens >= 1000 ? 
+            `${(totalTokens / 1000).toFixed(1)}K` : 
+            totalTokens.toString();
+        
+        document.getElementById('miniTokenValue').textContent = tokenDisplay;
+        
+        // グラフを更新
+        this.updateMiniChart();
+    }
+
+    createMiniChart() {
+        const canvas = document.getElementById('miniChart');
+        const ctx = canvas.getContext('2d');
+        
+        // キャンバスサイズを設定
+        canvas.width = 380;
+        canvas.height = 180;
+        
+        this.miniChart = new Chart(ctx, {
+            type: 'line',
+            data: this.getMiniChartData(),
+            options: {
+                responsive: false,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        grid: {
+                            display: true,
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            font: {
+                                size: 8
+                            },
+                            maxTicksLimit: 6
+                        }
+                    },
+                    y: {
+                        display: true,
+                        grid: {
+                            display: true,
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            font: {
+                                size: 8
+                            },
+                            callback: function(value) {
+                                return value >= 1000 ? (value/1000).toFixed(0) + 'K' : value;
+                            }
+                        }
+                    }
+                },
+                elements: {
+                    point: {
+                        radius: 1
+                    }
+                },
+                interaction: {
+                    intersect: false
+                }
+            }
+        });
+    }
+
+    getMiniChartData() {
+        const now = new Date();
+        const labels = [];
+        const data = [];
+        
+        // 過去24時間分のデータを準備（1時間ごと）
+        for (let i = 23; i >= 0; i--) {
+            const time = new Date(now.getTime() - i * 60 * 60 * 1000);
+            const timeStr = time.getHours().toString().padStart(2, '0') + ':00';
+            labels.push(timeStr);
+            
+            // その時間のトークン数を取得
+            const hourlyTokens = this.getHourlyTokensForTime(time);
+            data.push(hourlyTokens);
+        }
+        
+        console.log('Mini chart labels:', labels);
+        console.log('Mini chart data:', data);
+        
+        return {
+            labels: labels,
+            datasets: [{
+                data: data,
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]
+        };
+    }
+
+    getHourlyTokens(date, hour) {
+        const dateStr = date.toISOString().split('T')[0];
+        const dayData = this.dailyUsageData.get(dateStr);
+        
+        if (!dayData || !dayData.hourlyUsage) return 0;
+        
+        return dayData.hourlyUsage[hour] || 0;
+    }
+
+    getHourlyTokensForTime(time) {
+        const dateStr = time.toISOString().split('T')[0];
+        const hour = time.getHours();
+        const dayData = this.dailyUsageData.get(dateStr);
+        
+        if (!dayData || !dayData.hourlyUsage) return 0;
+        
+        return dayData.hourlyUsage[hour] || 0;
+    }
+
+    getLast24HoursTokens() {
+        const now = new Date();
+        let totalTokens = 0;
+        
+        // 過去24時間分のトークンを合計
+        for (let i = 0; i < 24; i++) {
+            const time = new Date(now.getTime() - i * 60 * 60 * 1000);
+            totalTokens += this.getHourlyTokensForTime(time);
+        }
+        
+        return totalTokens;
+    }
+
+    updateMiniChart() {
+        if (!this.miniChart) return;
+        
+        this.miniChart.data = this.getMiniChartData();
+        this.miniChart.update('none');
+    }
+
+    destroyMiniChart() {
+        if (this.miniChart) {
+            this.miniChart.destroy();
+            this.miniChart = null;
         }
     }
 }
