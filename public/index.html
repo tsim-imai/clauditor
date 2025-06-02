@@ -337,9 +337,20 @@
     <div id="miniMode" class="mini-mode hidden">
         <div class="mini-header">
             <span class="mini-title">Clauditor</span>
-            <button id="exitMiniMode" class="mini-close-btn" title="通常モードに戻る">
-                <i class="material-icons">fullscreen</i>
-            </button>
+            <div class="mini-header-controls">
+                <select id="miniTimeRange" class="mini-time-select" title="時間範囲を選択">
+                    <option value="10m">10分</option>
+                    <option value="30m">30分</option>
+                    <option value="60m">60分</option>
+                    <option value="3">3時間</option>
+                    <option value="6">6時間</option>
+                    <option value="12">12時間</option>
+                    <option value="24">24時間</option>
+                </select>
+                <button id="exitMiniMode" class="mini-close-btn" title="通常モードに戻る">
+                    <i class="material-icons">fullscreen</i>
+                </button>
+            </div>
         </div>
         <div class="mini-content">
             <div class="mini-stats-grid">

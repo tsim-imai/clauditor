@@ -23,6 +23,7 @@ class AppState {
         this.isMiniMode = false;
         this.miniChart = null;
         this.refreshDebounceTimer = null;
+        this.miniTimeRange = '10m'; // デフォルト10分
         
         this.loadSettings();
         this.initializeApp();
@@ -165,6 +166,15 @@ class AppState {
         // 最小ウィンドウモード終了
         document.getElementById('exitMiniMode').addEventListener('click', () => {
             this.exitMiniMode();
+        });
+        
+        // 最小モード時間範囲変更
+        document.getElementById('miniTimeRange').addEventListener('change', (e) => {
+            this.miniTimeRange = e.target.value;
+            if (this.isMiniMode) {
+                this.updateMiniMode();
+                this.updateMiniChart();
+            }
         });
 
         // デバッグ用: Ctrl+Shift+F でファイル監視状態をチェック
@@ -1599,6 +1609,9 @@ class AppState {
             document.querySelector('.header').classList.add('hidden');
             document.querySelector('.main-container').classList.add('hidden');
             
+            // セレクトボックスの初期値を設定
+            document.getElementById('miniTimeRange').value = this.miniTimeRange;
+            
             this.isMiniMode = true;
             this.updateMiniMode();
             this.createMiniChart();
@@ -1629,8 +1642,8 @@ class AppState {
     updateMiniMode() {
         if (!this.isMiniMode) return;
         
-        // 過去24時間のデータを取得
-        const stats = this.getLast24HoursStats();
+        // 選択された時間範囲のデータを取得
+        const stats = this.getMiniModeStats(this.miniTimeRange);
         
         // トークン数を表示（K単位で表示）
         const tokenDisplay = stats.tokens >= 1000 ? 
@@ -1718,15 +1731,17 @@ class AppState {
         const labels = [];
         const data = [];
         
-        // 過去24時間分のデータを準備（1時間ごと）
-        for (let i = 23; i >= 0; i--) {
-            const time = new Date(now.getTime() - i * 60 * 60 * 1000);
-            const timeStr = time.getHours().toString().padStart(2, '0') + ':00';
+        // 時間範囲に応じてデータポイント数と間隔を調整
+        const { pointCount, intervalMinutes } = this.getMiniChartConfig(this.miniTimeRange);
+        
+        for (let i = pointCount - 1; i >= 0; i--) {
+            const time = new Date(now.getTime() - i * intervalMinutes * 60 * 1000);
+            const timeStr = this.formatMiniChartTime(time, this.miniTimeRange);
             labels.push(timeStr);
             
-            // その時間のトークン数を取得
-            const hourlyTokens = this.getHourlyTokensForTime(time);
-            data.push(hourlyTokens);
+            // その時間ブロックのトークン数を取得
+            const tokens = this.getTokensForTimeBlock(time, this.miniTimeRange);
+            data.push(tokens);
         }
         
         console.log('Mini chart labels:', labels);
@@ -1753,22 +1768,84 @@ class AppState {
         return dayData.hourlyUsage[hour] || 0;
     }
 
-    getHourlyTokensForTime(time) {
-        const dateStr = time.toISOString().split('T')[0];
-        const hour = time.getHours();
-        const dayData = this.dailyUsageData.get(dateStr);
+    getMiniChartConfig(timeRange) {
+        // 時間範囲に応じてチャート設定を返す
+        if (timeRange === '10m') {
+            return { pointCount: 10, intervalMinutes: 1 }; // 10分、1分間隔
+        } else if (timeRange === '30m') {
+            return { pointCount: 15, intervalMinutes: 2 }; // 30分、2分間隔
+        } else if (timeRange === '60m') {
+            return { pointCount: 12, intervalMinutes: 5 }; // 60分、5分間隔
+        } else if (timeRange == 3) {
+            return { pointCount: 18, intervalMinutes: 10 }; // 3時間、10分間隔
+        } else if (timeRange == 6) {
+            return { pointCount: 24, intervalMinutes: 15 }; // 6時間、15分間隔
+        } else if (timeRange == 12) {
+            return { pointCount: 24, intervalMinutes: 30 }; // 12時間、30分間隔
+        } else { // 24時間
+            return { pointCount: 24, intervalMinutes: 60 }; // 24時間、1時間間隔
+        }
+    }
+    
+    formatMiniChartTime(time, timeRange) {
+        if (timeRange === '10m' || timeRange === '30m' || timeRange === '60m') {
+            // 分単位の場合は秒も表示
+            const minutes = this.getRoundedMinutes(time, timeRange);
+            return time.getHours().toString().padStart(2, '0') + ':' + 
+                   minutes.toString().padStart(2, '0');
+        } else if (timeRange == 24) {
+            return time.getHours().toString().padStart(2, '0') + ':00';
+        } else {
+            const minutes = this.getRoundedMinutes(time, timeRange);
+            return time.getHours().toString().padStart(2, '0') + ':' + 
+                   minutes.toString().padStart(2, '0');
+        }
+    }
+    
+    getRoundedMinutes(time, timeRange) {
+        if (timeRange === '10m') {
+            return time.getMinutes();
+        } else if (timeRange === '30m') {
+            return Math.floor(time.getMinutes() / 2) * 2;
+        } else if (timeRange === '60m') {
+            return Math.floor(time.getMinutes() / 5) * 5;
+        } else if (timeRange == 3) {
+            return Math.floor(time.getMinutes() / 10) * 10;
+        } else if (timeRange == 6) {
+            return Math.floor(time.getMinutes() / 15) * 15;
+        } else if (timeRange == 12) {
+            return Math.floor(time.getMinutes() / 30) * 30;
+        } else {
+            return 0;
+        }
+    }
+    
+    getTokensForTimeBlock(time, timeRange) {
+        const timeBlock = this.getTimeBlock(time, timeRange);
         
-        if (!dayData || !dayData.hourlyUsage) return 0;
+        let tokens = 0;
+        this.allLogEntries.forEach(entry => {
+            const entryTime = new Date(entry.timestamp);
+            const entryTimeBlock = this.getTimeBlock(entryTime, timeRange);
+            
+            if (entryTimeBlock === timeBlock) {
+                if (entry.message?.usage) {
+                    tokens += (entry.message.usage.input_tokens || 0) + 
+                             (entry.message.usage.output_tokens || 0);
+                }
+            }
+        });
         
-        return dayData.hourlyUsage[hour] || 0;
+        return tokens;
     }
 
-    getLast24HoursStats() {
+    getMiniModeStats(timeRange) {
         const now = new Date();
-        const endTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const milliseconds = this.parseTimeRange(timeRange);
+        const endTime = new Date(now.getTime() - milliseconds);
         
-        // 過去24時間のエントリをフィルタリング
-        const last24HourEntries = this.allLogEntries.filter(entry => {
+        // 指定時間のエントリをフィルタリング
+        const timeRangeEntries = this.allLogEntries.filter(entry => {
             const entryTime = new Date(entry.timestamp);
             return entryTime >= endTime && entryTime <= now;
         });
@@ -1778,7 +1855,7 @@ class AppState {
         let totalCostJPY = 0;
         const uniqueHours = new Set();
         
-        last24HourEntries.forEach(entry => {
+        timeRangeEntries.forEach(entry => {
             if (entry.message?.usage) {
                 const inputTokens = entry.message.usage.input_tokens || 0;
                 const outputTokens = entry.message.usage.output_tokens || 0;
@@ -1789,20 +1866,85 @@ class AppState {
                 totalCostJPY += entry.costUSD * this.settings.exchangeRate;
             }
             
-            // 使用時間の計算（時間単位でユニークな時間をカウント）
-            const hour = new Date(entry.timestamp).toISOString().slice(0, 13);
-            uniqueHours.add(hour);
+            // 使用時間の計算（時間単位に応じて調整）
+            const time = new Date(entry.timestamp);
+            const timeBlock = this.getTimeBlock(time, timeRange);
+            uniqueHours.add(timeBlock);
         });
         
         return {
             tokens: totalTokens,
             cost: totalCostJPY,
-            hours: uniqueHours.size
+            hours: this.calculateDisplayHours(uniqueHours.size, timeRange)
         };
     }
     
-    getLast24HoursTokens() {
-        return this.getLast24HoursStats().tokens;
+    parseTimeRange(timeRange) {
+        // 時間範囲文字列をミリ秒に変換
+        if (timeRange.endsWith('m')) {
+            const minutes = parseInt(timeRange.replace('m', ''));
+            return minutes * 60 * 1000;
+        } else {
+            const hours = parseInt(timeRange);
+            return hours * 60 * 60 * 1000;
+        }
+    }
+    
+    getTimeBlock(time, timeRange) {
+        // 時間範囲に応じて適切な時間ブロックを生成
+        if (timeRange === '10m') {
+            // 10分範囲：1分単位
+            return time.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+        } else if (timeRange === '30m') {
+            // 30分範囲：2分単位
+            const minutes = Math.floor(time.getMinutes() / 2) * 2;
+            return time.toISOString().slice(0, 13) + ':' + minutes.toString().padStart(2, '0');
+        } else if (timeRange === '60m') {
+            // 60分範囲：5分単位
+            const minutes = Math.floor(time.getMinutes() / 5) * 5;
+            return time.toISOString().slice(0, 13) + ':' + minutes.toString().padStart(2, '0');
+        } else if (timeRange == 3) {
+            // 3時間：10分単位
+            const minutes = Math.floor(time.getMinutes() / 10) * 10;
+            return time.toISOString().slice(0, 13) + ':' + minutes.toString().padStart(2, '0');
+        } else if (timeRange == 6) {
+            // 6時間：15分単位
+            const minutes = Math.floor(time.getMinutes() / 15) * 15;
+            return time.toISOString().slice(0, 13) + ':' + minutes.toString().padStart(2, '0');
+        } else if (timeRange == 12) {
+            // 12時間：30分単位
+            const minutes = Math.floor(time.getMinutes() / 30) * 30;
+            return time.toISOString().slice(0, 13) + ':' + minutes.toString().padStart(2, '0');
+        } else {
+            // 24時間：1時間単位
+            return time.toISOString().slice(0, 13);
+        }
+    }
+    
+    calculateDisplayHours(blockCount, timeRange) {
+        // ブロック数を実際の時間に変換
+        if (timeRange === '10m') {
+            // 1分単位 → 時間
+            return blockCount / 60;
+        } else if (timeRange === '30m') {
+            // 2分単位 → 時間
+            return blockCount / 30;
+        } else if (timeRange === '60m') {
+            // 5分単位 → 時間
+            return blockCount / 12;
+        } else if (timeRange == 3) {
+            // 10分単位 → 時間
+            return blockCount / 6;
+        } else if (timeRange == 6) {
+            // 15分単位 → 時間
+            return blockCount / 4;
+        } else if (timeRange == 12) {
+            // 30分単位 → 時間
+            return blockCount / 2;
+        } else {
+            // 1時間単位
+            return blockCount;
+        }
     }
 
     updateMiniChart() {

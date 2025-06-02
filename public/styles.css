@@ -1057,6 +1057,13 @@ body {
     -webkit-app-region: drag;
 }
 
+.mini-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    -webkit-app-region: no-drag;
+}
+
 .mini-title {
     font-size: 0.8rem;
     font-weight: 600;
@@ -1081,6 +1088,26 @@ body {
 
 .mini-close-btn .material-icons {
     font-size: 1rem;
+}
+
+.mini-time-select {
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mini-time-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.mini-time-select:hover {
+    background-color: var(--surface-secondary);
 }
 
 .mini-content {
