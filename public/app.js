@@ -2155,6 +2155,15 @@ class AppState {
         this.miniChart.data.labels = newData.labels;
         this.miniChart.data.datasets[0].data = newData.datasets[0].data;
         
+        // ポイントサイズ設定を明示的に再設定
+        const dataset = this.miniChart.data.datasets[0];
+        dataset.pointRadius = 1.5;
+        dataset.pointHoverRadius = 4;
+        dataset.pointBorderWidth = 1;
+        dataset.pointHoverBorderWidth = 2;
+        dataset.pointBackgroundColor = 'rgb(59, 130, 246)';
+        dataset.pointBorderColor = '#ffffff';
+        
         this.miniChart.update('active'); // スムーズなアニメーション付きで更新
     }
 
