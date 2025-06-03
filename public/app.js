@@ -1890,15 +1890,6 @@ class AppState {
                         }
                     }
                 },
-                elements: {
-                    point: {
-                        radius: 1.5,
-                        hoverRadius: 4,
-                        backgroundColor: 'rgb(59, 130, 246)',
-                        borderColor: 'rgb(59, 130, 246)',
-                        borderWidth: 1
-                    }
-                },
                 interaction: {
                     intersect: false,
                     mode: 'index'
