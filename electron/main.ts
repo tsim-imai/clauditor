@@ -708,60 +708,6 @@ ipcMain.handle('fetch-exchange-rate', async () => {
   }
 });
 
-// Smooth window resize animation
-const animateWindowResize = (
-  startBounds: { width: number; height: number; x?: number; y?: number },
-  endBounds: { width: number; height: number; x?: number; y?: number },
-  duration: number = 300
-): Promise<void> => {
-  return new Promise((resolve) => {
-    if (!mainWindow) {
-      resolve();
-      return;
-    }
-
-    const steps = 20; // アニメーションの分割数
-    const stepDuration = duration / steps;
-    let currentStep = 0;
-
-    const widthDiff = endBounds.width - startBounds.width;
-    const heightDiff = endBounds.height - startBounds.height;
-    const xDiff = (endBounds.x || startBounds.x || 0) - (startBounds.x || 0);
-    const yDiff = (endBounds.y || startBounds.y || 0) - (startBounds.y || 0);
-
-    const animate = () => {
-      currentStep++;
-      const progress = currentStep / steps;
-      
-      // イージング関数（ease-out）
-      const easeOutQuart = (t: number): number => 1 - Math.pow(1 - t, 4);
-      const easedProgress = easeOutQuart(progress);
-
-      const currentWidth = Math.round(startBounds.width + widthDiff * easedProgress);
-      const currentHeight = Math.round(startBounds.height + heightDiff * easedProgress);
-      const currentX = Math.round((startBounds.x || 0) + xDiff * easedProgress);
-      const currentY = Math.round((startBounds.y || 0) + yDiff * easedProgress);
-
-      mainWindow?.setBounds({
-        width: currentWidth,
-        height: currentHeight,
-        x: currentX,
-        y: currentY
-      }, false);
-
-      if (currentStep < steps) {
-        setTimeout(animate, stepDuration);
-      } else {
-        // 最終フレームで正確な値を設定
-        mainWindow?.setBounds(endBounds, false);
-        resolve();
-      }
-    };
-
-    animate();
-  });
-};
-
 // Mini window mode handlers
 ipcMain.handle('set-mini-mode', async (_, enabled: boolean) => {
   if (!mainWindow) return false;
@@ -769,46 +715,54 @@ ipcMain.handle('set-mini-mode', async (_, enabled: boolean) => {
   if (enabled) {
     // Set mini mode: small size, always on top
     const currentBounds = mainWindow.getBounds();
-    console.log('🎬 Starting mini mode animation - Current size:', currentBounds);
+    console.log('Before mini mode - Current size:', currentBounds);
     
-    mainWindow.setResizable(true);
+    mainWindow.setResizable(true); // まずリサイズ可能にする
+    
+    // 最小サイズ制約を一時的に削除
     mainWindow.setMinimumSize(200, 150);
     
-    // アニメーション付きでサイズ変更
-    await animateWindowResize(
-      { width: currentBounds.width, height: currentBounds.height, x: currentBounds.x, y: currentBounds.y },
-      { width: 420, height: 348, x: currentBounds.x, y: currentBounds.y },
-      400 // 400ms のアニメーション
-    );
+    // setBoundsでより確実にサイズを設定
+    mainWindow.setBounds({
+      x: currentBounds.x,
+      y: currentBounds.y,
+      width: 420,
+      height: 348
+    }, true);
     
     mainWindow.setAlwaysOnTop(true, 'floating');
     mainWindow.setResizable(false);
     
-    console.log('✨ Mini mode animation completed');
+    // サイズ設定を確認
+    setTimeout(() => {
+      console.log('After mini mode - Current size:', mainWindow?.getBounds());
+    }, 100);
+    
+    console.log('Entering mini mode, setting size to 420x348');
   } else {
     // Set normal mode: normal size, not always on top
-    const currentBounds = mainWindow.getBounds();
-    console.log('🎬 Starting normal mode animation - Current size:', currentBounds);
+    console.log('Before normal mode - Current size:', mainWindow.getBounds());
     
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setResizable(true);
+    
+    // 最小サイズ制約を復元
     mainWindow.setMinimumSize(700, 600);
     
-    // 中央配置の座標を計算
-    const screen = require('electron').screen;
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
-    const centerX = Math.round((screenWidth - 1400) / 2);
-    const centerY = Math.round((screenHeight - 900) / 2);
+    // setBoundsでより確実にサイズを設定
+    mainWindow.setBounds({
+      width: 1400,
+      height: 900
+    }, true);
     
-    // アニメーション付きでサイズ変更
-    await animateWindowResize(
-      { width: currentBounds.width, height: currentBounds.height, x: currentBounds.x, y: currentBounds.y },
-      { width: 1400, height: 900, x: centerX, y: centerY },
-      500 // 500ms のアニメーション
-    );
+    mainWindow.center(); // ウィンドウを中央に配置
     
-    console.log('✨ Normal mode animation completed');
+    // サイズ設定を確認
+    setTimeout(() => {
+      console.log('After normal mode - Current size:', mainWindow?.getBounds());
+    }, 100);
+    
+    console.log('Exiting mini mode, setting size to 1400x900');
   }
   
   return true;
