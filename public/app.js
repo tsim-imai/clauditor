@@ -1809,7 +1809,9 @@ class AppState {
         
         // グラフを少し遅延してスムーズに更新
         setTimeout(() => {
-            this.updateMiniChart();
+            // 時間範囲変更時はチャートを再作成して設定を確実に保持
+            this.destroyMiniChart();
+            this.createMiniChart();
             
             // チャートコンテナをフェードイン
             if (chartContainer) {
