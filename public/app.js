@@ -172,9 +172,7 @@ class AppState {
         document.getElementById('miniTimeRange').addEventListener('change', (e) => {
             this.miniTimeRange = e.target.value;
             if (this.isMiniMode) {
-                this.updateMiniMode();
-                this.updateMiniChart();
-                this.updateMiniMessageStats(); // 時間範囲変更時にメッセージ統計も更新
+                this.updateMiniModeAnimated(); // アニメーション付きで更新
             }
         });
 
@@ -422,7 +420,7 @@ class AppState {
     }
 
     // 最小モード用のメッセージ統計を更新（時間範囲フィルタ適用）
-    updateMiniMessageStats() {
+    updateMiniMessageStats(animated = false) {
         const now = new Date();
         const milliseconds = this.parseTimeRange(this.miniTimeRange);
         const endTime = new Date(now.getTime() - milliseconds);
@@ -453,8 +451,33 @@ class AppState {
             totalTimeRangeEntries: timeRangeEntries.length 
         });
         
-        document.getElementById('miniUserMessageCount').textContent = userMessages.toLocaleString();
-        document.getElementById('miniAssistantMessageCount').textContent = assistantMessages.toLocaleString();
+        // アニメーション付きで値を更新
+        if (animated) {
+            this.animateValueChange('miniUserMessageCount', userMessages.toLocaleString());
+            this.animateValueChange('miniAssistantMessageCount', assistantMessages.toLocaleString());
+        } else {
+            document.getElementById('miniUserMessageCount').textContent = userMessages.toLocaleString();
+            document.getElementById('miniAssistantMessageCount').textContent = assistantMessages.toLocaleString();
+        }
+    }
+
+    // アニメーション付きで値を更新
+    animateValueChange(elementId, newValue) {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+        
+        // フェードアウト
+        element.style.opacity = '0.6';
+        element.style.transform = 'scale(0.95)';
+        
+        setTimeout(() => {
+            // 値を更新
+            element.textContent = newValue;
+            
+            // フェードイン
+            element.style.opacity = '1';
+            element.style.transform = 'scale(1)';
+        }, 100);
     }
 
     // 統計概要を更新
@@ -1754,6 +1777,47 @@ class AppState {
         this.updateMiniChart();
     }
 
+    // アニメーション付きの最小モード更新
+    updateMiniModeAnimated() {
+        if (!this.isMiniMode) return;
+        
+        // チャートコンテナをフェードアウト
+        const chartContainer = document.querySelector('.mini-chart-container');
+        if (chartContainer) {
+            chartContainer.style.opacity = '0.6';
+        }
+        
+        // 時間範囲フィルタ適用でメッセージ統計をアニメーション付きで更新
+        this.updateMiniMessageStats(true);
+        
+        // 選択された時間範囲のデータを取得
+        const stats = this.getMiniModeStats(this.miniTimeRange);
+        
+        // 統計値をアニメーション付きで更新
+        const tokenDisplay = stats.tokens >= 1000 ? 
+            `${(stats.tokens / 1000).toFixed(1)}K` : 
+            stats.tokens.toString();
+        this.animateValueChange('miniTokenValue', tokenDisplay);
+        
+        const costDisplay = `¥${Math.round(stats.cost)}`;
+        this.animateValueChange('miniCostValue', costDisplay);
+        
+        const timeDisplay = stats.hours >= 1 ? 
+            `${stats.hours.toFixed(1)}h` : 
+            `${Math.round(stats.hours * 60)}m`;
+        this.animateValueChange('miniTimeValue', timeDisplay);
+        
+        // グラフを少し遅延してスムーズに更新
+        setTimeout(() => {
+            this.updateMiniChart();
+            
+            // チャートコンテナをフェードイン
+            if (chartContainer) {
+                chartContainer.style.opacity = '1';
+            }
+        }, 150);
+    }
+
     createMiniChart() {
         const canvas = document.getElementById('miniChart');
         const ctx = canvas.getContext('2d');
@@ -1771,6 +1835,29 @@ class AppState {
                 plugins: {
                     legend: {
                         display: false
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderColor: 'rgb(59, 130, 246)',
+                        borderWidth: 1,
+                        cornerRadius: 6,
+                        displayColors: false,
+                        callbacks: {
+                            title: function(context) {
+                                return context[0].label;
+                            },
+                            label: function(context) {
+                                const value = context.parsed.y;
+                                if (value >= 1000) {
+                                    return `${(value / 1000).toFixed(1)}K トークン`;
+                                }
+                                return `${value} トークン`;
+                            }
+                        }
                     }
                 },
                 scales: {
@@ -1805,10 +1892,19 @@ class AppState {
                 },
                 elements: {
                     point: {
-                        radius: 1
+                        radius: 3,
+                        hoverRadius: 5,
+                        backgroundColor: 'rgb(59, 130, 246)',
+                        borderColor: 'rgb(59, 130, 246)',
+                        borderWidth: 2
                     }
                 },
                 interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                hover: {
+                    mode: 'index',
                     intersect: false
                 }
             }
@@ -1836,12 +1932,22 @@ class AppState {
         console.log('Mini chart labels:', labels);
         console.log('Mini chart data:', data);
         
+        // ダークモード対応の色設定
+        const primaryColor = 'rgb(59, 130, 246)';
+        const primaryColorAlpha = 'rgba(59, 130, 246, 0.1)';
+        
         return {
             labels: labels,
             datasets: [{
                 data: data,
-                borderColor: 'rgb(59, 130, 246)',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                borderColor: primaryColor,
+                backgroundColor: primaryColorAlpha,
+                pointBackgroundColor: primaryColor,
+                pointBorderColor: '#ffffff',
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                pointBorderWidth: 2,
+                pointHoverBorderWidth: 3,
                 fill: true,
                 tension: 0.4
             }]
@@ -2051,7 +2157,7 @@ class AppState {
         if (!this.miniChart) return;
         
         this.miniChart.data = this.getMiniChartData();
-        this.miniChart.update('none');
+        this.miniChart.update('active'); // スムーズなアニメーション付きで更新
     }
 
     destroyMiniChart() {
