@@ -1773,8 +1773,9 @@ class AppState {
             `${Math.round(stats.hours * 60)}m`;
         document.getElementById('miniTimeValue').textContent = timeDisplay;
         
-        // グラフを更新
-        this.updateMiniChart();
+        // グラフを再作成して設定を確実に保持
+        this.destroyMiniChart();
+        this.createMiniChart();
     }
 
     // アニメーション付きの最小モード更新
