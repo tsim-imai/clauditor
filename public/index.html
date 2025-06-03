@@ -320,6 +320,23 @@
                     </div>
                 </div>
                 <div class="setting-group">
+                    <label for="timezoneSelect">タイムゾーン:</label>
+                    <select id="timezoneSelect" class="timezone-select">
+                        <option value="Asia/Tokyo">日本標準時 (JST) +09:00</option>
+                        <option value="UTC">協定世界時 (UTC) +00:00</option>
+                        <option value="America/New_York">東部標準時 (EST) -05:00</option>
+                        <option value="America/Los_Angeles">太平洋標準時 (PST) -08:00</option>
+                        <option value="Europe/London">グリニッジ標準時 (GMT) +00:00</option>
+                        <option value="Europe/Paris">中央ヨーロッパ時間 (CET) +01:00</option>
+                        <option value="Asia/Shanghai">中国標準時 (CST) +08:00</option>
+                        <option value="Asia/Seoul">韓国標準時 (KST) +09:00</option>
+                        <option value="Australia/Sydney">オーストラリア東部時間 (AEST) +10:00</option>
+                    </select>
+                    <div class="timezone-info">
+                        <small id="timezoneInfo" class="timezone-note">すべての日時がこのタイムゾーンで表示されます</small>
+                    </div>
+                </div>
+                <div class="setting-group">
                     <label>
                         <input type="checkbox" id="darkModeCheckbox">
                         ダークモード
@@ -393,6 +410,8 @@
         <button id="dismissError" class="dismiss-button"><i class="material-icons">close</i></button>
     </div>
 
+    <script src="timezone-manager.js"></script>
+    <script src="log-data-processor.js"></script>
     <script type="module" src="app.js"></script>
 </body>
 </html>
