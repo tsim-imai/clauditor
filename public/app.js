@@ -2147,7 +2147,12 @@ class AppState {
     updateMiniChart() {
         if (!this.miniChart) return;
         
-        this.miniChart.data = this.getMiniChartData();
+        const newData = this.getMiniChartData();
+        
+        // データの値とラベルのみを更新（設定は保持）
+        this.miniChart.data.labels = newData.labels;
+        this.miniChart.data.datasets[0].data = newData.datasets[0].data;
+        
         this.miniChart.update('active'); // スムーズなアニメーション付きで更新
     }
 
