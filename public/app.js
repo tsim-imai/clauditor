@@ -2160,7 +2160,7 @@ class AppState {
         this.miniChart.data.labels = newData.labels;
         this.miniChart.data.datasets[0].data = newData.datasets[0].data;
         
-        this.miniChart.update('active'); // スムーズなアニメーション付きで更新
+        this.miniChart.update('none'); // アニメーションなしで瞬間更新
     }
 
     destroyMiniChart() {
