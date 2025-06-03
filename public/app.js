@@ -1892,11 +1892,11 @@ class AppState {
                 },
                 elements: {
                     point: {
-                        radius: 3,
-                        hoverRadius: 5,
+                        radius: 1.5,
+                        hoverRadius: 4,
                         backgroundColor: 'rgb(59, 130, 246)',
                         borderColor: 'rgb(59, 130, 246)',
-                        borderWidth: 2
+                        borderWidth: 1
                     }
                 },
                 interaction: {
@@ -1944,10 +1944,10 @@ class AppState {
                 backgroundColor: primaryColorAlpha,
                 pointBackgroundColor: primaryColor,
                 pointBorderColor: '#ffffff',
-                pointRadius: 3,
-                pointHoverRadius: 6,
-                pointBorderWidth: 2,
-                pointHoverBorderWidth: 3,
+                pointRadius: 1.5,
+                pointHoverRadius: 4,
+                pointBorderWidth: 1,
+                pointHoverBorderWidth: 2,
                 fill: true,
                 tension: 0.4
             }]
