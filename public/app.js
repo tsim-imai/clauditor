@@ -1892,6 +1892,16 @@ class AppState {
                         }
                     }
                 },
+                elements: {
+                    point: {
+                        radius: 1.5,
+                        hoverRadius: 4,
+                        backgroundColor: 'rgb(59, 130, 246)',
+                        borderColor: '#ffffff',
+                        borderWidth: 1,
+                        hoverBorderWidth: 2
+                    }
+                },
                 interaction: {
                     intersect: false,
                     mode: 'index'
@@ -1935,14 +1945,9 @@ class AppState {
                 data: data,
                 borderColor: primaryColor,
                 backgroundColor: primaryColorAlpha,
-                pointBackgroundColor: primaryColor,
-                pointBorderColor: '#ffffff',
-                pointRadius: 1.5,
-                pointHoverRadius: 4,
-                pointBorderWidth: 1,
-                pointHoverBorderWidth: 2,
                 fill: true,
-                tension: 0.4
+                tension: 0.4,
+                borderWidth: 2
             }]
         };
     }
@@ -2154,15 +2159,6 @@ class AppState {
         // データの値とラベルのみを更新（設定は保持）
         this.miniChart.data.labels = newData.labels;
         this.miniChart.data.datasets[0].data = newData.datasets[0].data;
-        
-        // ポイントサイズ設定を明示的に再設定
-        const dataset = this.miniChart.data.datasets[0];
-        dataset.pointRadius = 1.5;
-        dataset.pointHoverRadius = 4;
-        dataset.pointBorderWidth = 1;
-        dataset.pointHoverBorderWidth = 2;
-        dataset.pointBackgroundColor = 'rgb(59, 130, 246)';
-        dataset.pointBorderColor = '#ffffff';
         
         this.miniChart.update('active'); // スムーズなアニメーション付きで更新
     }
