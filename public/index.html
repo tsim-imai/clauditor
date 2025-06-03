@@ -336,7 +336,21 @@
     <!-- 最小ウィンドウモード -->
     <div id="miniMode" class="mini-mode hidden">
         <div class="mini-header">
-            <span class="mini-title">Clauditor</span>
+            <div class="mini-header-left">
+                <div class="mini-app-info">
+                    <span class="mini-title">Clauditor</span>
+                    <div class="mini-message-stats">
+                        <span class="mini-message-stat-item">
+                            <i class="material-icons">person</i>
+                            <span id="miniUserMessageCount">0</span>
+                        </span>
+                        <span class="mini-message-stat-item">
+                            <i class="material-icons">smart_toy</i>
+                            <span id="miniAssistantMessageCount">0</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
             <div class="mini-header-controls">
                 <select id="miniTimeRange" class="mini-time-select" title="時間範囲を選択">
                     <option value="10m">10分</option>

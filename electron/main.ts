@@ -136,7 +136,8 @@ const processLargeJsonlFile = async (filePath: string, allEntries: LogEntry[]): 
 
       try {
         const entry = JSON.parse(line) as LogEntry;
-        if (entry.timestamp && entry.message?.usage && entry.costUSD !== undefined) {
+        // Include all entries with timestamp or type for comprehensive message tracking
+        if (entry.timestamp || entry.type) {
           allEntries.push(entry);
           processedCount++;
         }
@@ -335,7 +336,8 @@ ipcMain.handle('read-project-logs', async (_, projectPath: string): Promise<LogE
         for (const line of lines) {
           try {
             const entry = JSON.parse(line) as LogEntry;
-            if (entry.timestamp && entry.message?.usage && entry.costUSD !== undefined) {
+            // Include all entries with timestamp or type for comprehensive message tracking
+            if (entry.timestamp || entry.type) {
               allEntries.push(entry);
             }
           } catch (parseError) {

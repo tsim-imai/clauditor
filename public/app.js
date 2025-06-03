@@ -174,6 +174,7 @@ class AppState {
             if (this.isMiniMode) {
                 this.updateMiniMode();
                 this.updateMiniChart();
+                this.updateMiniMessageStats(); // 時間範囲変更時にメッセージ統計も更新
             }
         });
 
@@ -373,13 +374,16 @@ class AppState {
         }
 
         this.filteredEntries = this.allLogEntries.filter(entry => {
+            if (!entry.timestamp) return false;
             const entryDate = new Date(entry.timestamp);
+            if (isNaN(entryDate.getTime())) return false;
             return entryDate >= startDate;
         });
     }
 
     // ダッシュボードを更新
     updateDashboard() {
+        this.updateMessageStats();
         this.updateStatsOverview();
         this.createCharts();
         this.updateInsights();
@@ -388,10 +392,69 @@ class AppState {
     
     // サイレント更新（チカチカを防ぐ）
     updateDashboardSilent() {
+        this.updateMessageStats();
         this.updateStatsOverview();
         this.updateChartsSilent();
         this.updateInsights();
         this.updateProjectList();
+    }
+
+    // メッセージ統計を更新
+    updateMessageStats() {
+        let userMessages = 0;
+        let assistantMessages = 0;
+        
+        this.allLogEntries.forEach(entry => {
+            if (entry.type === 'user') {
+                userMessages++;
+            } else if (entry.type === 'assistant') {
+                assistantMessages++;
+            }
+        });
+        
+        // デバッグ用ログ
+        console.log('Message stats:', { userMessages, assistantMessages, totalEntries: this.allLogEntries.length });
+        
+        // 最小ウィンドウモードの表示のみ
+        if (this.isMiniMode) {
+            this.updateMiniMessageStats();
+        }
+    }
+
+    // 最小モード用のメッセージ統計を更新（時間範囲フィルタ適用）
+    updateMiniMessageStats() {
+        const now = new Date();
+        const milliseconds = this.parseTimeRange(this.miniTimeRange);
+        const endTime = new Date(now.getTime() - milliseconds);
+        
+        // 指定時間のエントリをフィルタリング
+        const timeRangeEntries = this.allLogEntries.filter(entry => {
+            if (!entry.timestamp) return false;
+            const entryTime = new Date(entry.timestamp);
+            if (isNaN(entryTime.getTime())) return false;
+            return entryTime >= endTime && entryTime <= now;
+        });
+        
+        let userMessages = 0;
+        let assistantMessages = 0;
+        
+        timeRangeEntries.forEach(entry => {
+            if (entry.type === 'user') {
+                userMessages++;
+            } else if (entry.type === 'assistant') {
+                assistantMessages++;
+            }
+        });
+        
+        console.log('Mini mode message stats:', { 
+            timeRange: this.miniTimeRange, 
+            userMessages, 
+            assistantMessages, 
+            totalTimeRangeEntries: timeRangeEntries.length 
+        });
+        
+        document.getElementById('miniUserMessageCount').textContent = userMessages.toLocaleString();
+        document.getElementById('miniAssistantMessageCount').textContent = assistantMessages.toLocaleString();
     }
 
     // 統計概要を更新
@@ -553,12 +616,13 @@ class AppState {
     // 統計を計算
     calculateStats(entries) {
         return entries.reduce((acc, entry) => {
+            // Only calculate stats for entries with usage data (excludes summary entries)
             if (entry.message && entry.message.usage) {
                 acc.totalTokens += (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
+                acc.costUSD += entry.costUSD || 0;
+                acc.costJPY += (entry.costUSD || 0) * this.settings.exchangeRate;
+                acc.calls += 1;
             }
-            acc.costUSD += entry.costUSD || 0;
-            acc.costJPY += (entry.costUSD || 0) * this.settings.exchangeRate;
-            acc.calls += 1;
             return acc;
         }, { totalTokens: 0, costUSD: 0, costJPY: 0, calls: 0 });
     }
@@ -571,8 +635,12 @@ class AppState {
         const dailyUsage = new Map();
         
         targetEntries.forEach(entry => {
-            const date = new Date(entry.timestamp).toISOString().split('T')[0];
-            const hour = new Date(entry.timestamp).getHours();
+            if (!entry.timestamp) return;
+            const entryDate = new Date(entry.timestamp);
+            if (isNaN(entryDate.getTime())) return;
+            
+            const date = entryDate.toISOString().split('T')[0];
+            const hour = entryDate.getHours();
             
             if (!dailyUsage.has(date)) {
                 dailyUsage.set(date, new Set());
@@ -929,7 +997,11 @@ class AppState {
         const dailyMap = new Map();
 
         entries.forEach(entry => {
-            const date = new Date(entry.timestamp).toISOString().split('T')[0];
+            if (!entry.timestamp) return;
+            const entryDate = new Date(entry.timestamp);
+            if (isNaN(entryDate.getTime())) return;
+            
+            const date = entryDate.toISOString().split('T')[0];
             
             if (!dailyMap.has(date)) {
                 dailyMap.set(date, {
@@ -960,7 +1032,11 @@ class AppState {
         const hourlyData = new Array(24).fill(0);
 
         entries.forEach(entry => {
-            const hour = new Date(entry.timestamp).getHours();
+            if (!entry.timestamp) return;
+            const entryDate = new Date(entry.timestamp);
+            if (isNaN(entryDate.getTime())) return;
+            
+            const hour = entryDate.getHours();
             hourlyData[hour]++;
         });
 
@@ -1001,7 +1077,10 @@ class AppState {
         const weeklyMap = new Map();
 
         entries.forEach(entry => {
+            if (!entry.timestamp) return;
             const date = new Date(entry.timestamp);
+            if (isNaN(date.getTime())) return;
+            
             const weekStart = new Date(date);
             weekStart.setDate(date.getDate() - date.getDay());
             weekStart.setHours(0, 0, 0, 0);
@@ -1302,7 +1381,13 @@ class AppState {
         this.dailyUsageData.clear();
         
         this.allLogEntries.forEach(entry => {
-            const date = new Date(entry.timestamp).toISOString().split('T')[0];
+            // Skip entries without valid timestamp
+            if (!entry.timestamp) return;
+            
+            const entryDate = new Date(entry.timestamp);
+            if (isNaN(entryDate.getTime())) return; // Skip invalid dates
+            
+            const date = entryDate.toISOString().split('T')[0];
             
             if (!this.dailyUsageData.has(date)) {
                 this.dailyUsageData.set(date, {
@@ -1615,6 +1700,7 @@ class AppState {
             this.isMiniMode = true;
             this.updateMiniMode();
             this.createMiniChart();
+            this.updateMiniMessageStats(); // 最小モード開始時にメッセージ統計を初期化
         } catch (error) {
             console.error('Failed to enter mini mode:', error);
             this.showError('最小ウィンドウモードに切り替えできませんでした');
@@ -1641,6 +1727,9 @@ class AppState {
 
     updateMiniMode() {
         if (!this.isMiniMode) return;
+        
+        // 時間範囲フィルタ適用でメッセージ統計を更新
+        this.updateMiniMessageStats();
         
         // 選択された時間範囲のデータを取得
         const stats = this.getMiniModeStats(this.miniTimeRange);
@@ -1825,7 +1914,12 @@ class AppState {
         
         let tokens = 0;
         this.allLogEntries.forEach(entry => {
+            // Skip entries without valid timestamp
+            if (!entry.timestamp) return;
+            
             const entryTime = new Date(entry.timestamp);
+            if (isNaN(entryTime.getTime())) return; // Skip invalid dates
+            
             const entryTimeBlock = this.getTimeBlock(entryTime, timeRange);
             
             if (entryTimeBlock === timeBlock) {
@@ -1846,7 +1940,9 @@ class AppState {
         
         // 指定時間のエントリをフィルタリング
         const timeRangeEntries = this.allLogEntries.filter(entry => {
+            if (!entry.timestamp) return false;
             const entryTime = new Date(entry.timestamp);
+            if (isNaN(entryTime.getTime())) return false;
             return entryTime >= endTime && entryTime <= now;
         });
         
@@ -1867,9 +1963,13 @@ class AppState {
             }
             
             // 使用時間の計算（時間単位に応じて調整）
-            const time = new Date(entry.timestamp);
-            const timeBlock = this.getTimeBlock(time, timeRange);
-            uniqueHours.add(timeBlock);
+            if (entry.timestamp) {
+                const time = new Date(entry.timestamp);
+                if (!isNaN(time.getTime())) {
+                    const timeBlock = this.getTimeBlock(time, timeRange);
+                    uniqueHours.add(timeBlock);
+                }
+            }
         });
         
         return {

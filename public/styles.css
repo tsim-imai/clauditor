@@ -93,6 +93,7 @@ body {
     gap: 1rem;
 }
 
+
 .app-title {
     font-size: 1.5rem;
     font-weight: 700;
@@ -1055,6 +1056,40 @@ body {
     border-radius: var(--border-radius) var(--border-radius) 0 0;
     cursor: move;
     -webkit-app-region: drag;
+}
+
+.mini-header-left {
+    display: flex;
+    align-items: center;
+}
+
+.mini-app-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.mini-message-stats {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: 16px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.mini-message-stat-item {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.125rem 0.25rem;
+    background-color: var(--surface-color);
+    border-radius: 3px;
+    border: 1px solid var(--border-color);
+}
+
+.mini-message-stat-item .material-icons {
+    font-size: 0.8rem;
 }
 
 .mini-header-controls {
