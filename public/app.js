@@ -355,7 +355,7 @@ class AppState {
         await this.dataProcessor.loadAllProjectsData(this.projects, window.electronAPI);
     }
 
-    // 時間期間を設定（高速化版）
+    // 時間期間を設定（アニメーション対応版）
     setTimePeriod(period) {
         console.time('setTimePeriod_total');
         
@@ -366,12 +366,11 @@ class AppState {
             btn.classList.toggle('active', btn.dataset.period === period);
         });
         
-        // 非同期でデータ処理を実行（UIブロックを防ぐ）
-        setTimeout(() => {
-            this.filterDataByPeriod();
-            this.updateDashboard();
-            console.timeEnd('setTimePeriod_total');
-        }, 0);
+        // データ処理とチャート更新を同期実行（アニメーション表示のため）
+        this.filterDataByPeriod();
+        this.updateDashboard();
+        
+        console.timeEnd('setTimePeriod_total');
     }
 
     // 期間でデータをフィルタリング（キャッシュ最適化版）
@@ -409,12 +408,21 @@ class AppState {
         this.updateMessageStats();
         this.updateStatsOverviewLightweight();
         
-        // チャートは要求時のみ更新（遅延ロード）
+        // チャート用の必要最小限データを事前計算
+        console.time('minimalAggregation');
+        const minimalData = {
+            dailyData: this.dataProcessor.aggregateDataByDay(this.filteredEntries),
+            hourlyData: this.dataProcessor.aggregateDataByHour(this.filteredEntries),
+            projectData: this.dataProcessor.aggregateDataByProject(this.filteredEntries),
+            weeklyData: this.dataProcessor.aggregateDataByWeek(this.filteredEntries)
+        };
+        console.timeEnd('minimalAggregation');
+        
+        // チャートは既存のものがあればサイレント更新、なければ新規作成
         if (this.charts.usage) {
-            this.updateChartsMinimal();
+            this.updateChartsSilentWithCache(minimalData);
         } else {
-            // 初回のみ作成
-            this.createChartsMinimal();
+            this.createChartsWithCache(minimalData);
         }
         
         // 洞察とプロジェクト一覧は非同期で更新（UIブロックを防ぐ）
@@ -496,7 +504,7 @@ class AppState {
         if (this.charts.usage) {
             // 必要な場合のみ再計算
             const chartType = document.getElementById('usageChartType').value;
-            this.charts.usage.update('none');
+            this.charts.usage.update('active');
         }
         
         console.timeEnd('updateChartsMinimal');
@@ -894,13 +902,16 @@ class AppState {
         }
         this.charts.usage.data.labels = dailyData.map(d => new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' }));
         this.charts.usage.data.datasets[0].data = data;
-        this.charts.usage.update('none');
+        this.charts.usage.data.datasets[0].label = label;
+        this.charts.usage.data.datasets[0].borderColor = color;
+        this.charts.usage.data.datasets[0].backgroundColor = color + '20';
+        this.charts.usage.update('active'); // 標準的な滑らかアニメーション
     }
     
     updateHourlyChartSilentWithCache(hourlyData) {
         if (!this.charts.hourly) return;
         this.charts.hourly.data.datasets[0].data = hourlyData;
-        this.charts.hourly.update('none');
+        this.charts.hourly.update('active'); // 標準的な滑らかアニメーション
     }
     
     updateProjectChartSilentWithCache(projectData) {
@@ -909,7 +920,7 @@ class AppState {
         this.charts.project.data.labels = projectData.map(d => d.project);
         this.charts.project.data.datasets[0].data = projectData.map(d => d.totalTokens);
         this.charts.project.data.datasets[0].backgroundColor = colors.slice(0, projectData.length);
-        this.charts.project.update('none');
+        this.charts.project.update('active'); // 標準的な滑らかアニメーション
     }
     
     updateWeeklyChartSilentWithCache(weeklyData) {
@@ -918,7 +929,7 @@ class AppState {
         const previousWeek = weeklyData[weeklyData.length - 2];
         this.charts.weekly.data.datasets[0].data = currentWeek ? currentWeek.dailyTokens : new Array(7).fill(0);
         this.charts.weekly.data.datasets[1].data = previousWeek ? previousWeek.dailyTokens : new Array(7).fill(0);
-        this.charts.weekly.update('none');
+        this.charts.weekly.update('active'); // 標準的な滑らかアニメーション
     }
     
     // 簡易版キャッシュ対応チャート作成（フォールバック）
@@ -973,6 +984,10 @@ class AppState {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: {
+                    duration: 750,
+                    easing: 'easeInOutQuart'
+                },
                 plugins: {
                     legend: {
                         display: false
@@ -1036,7 +1051,7 @@ class AppState {
         this.charts.usage.data.datasets[0].label = label;
         this.charts.usage.data.datasets[0].borderColor = color;
         this.charts.usage.data.datasets[0].backgroundColor = color + '20';
-        this.charts.usage.update('none'); // アニメーションなしで更新
+        this.charts.usage.update('active'); // 標準的な滑らかアニメーション
     }
 
     // 時間別使用パターンチャート
@@ -1064,6 +1079,10 @@ class AppState {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: {
+                    duration: 750,
+                    easing: 'easeInOutQuart'
+                },
                 plugins: {
                     legend: {
                         display: false
@@ -1103,7 +1122,7 @@ class AppState {
         
         // データを更新（チャートを再作成せず）
         this.charts.hourly.data.datasets[0].data = hourlyData;
-        this.charts.hourly.update('none'); // アニメーションなしで更新
+        this.charts.hourly.update('active'); // 標準的な滑らかアニメーション
     }
 
     // プロジェクト別使用量チャート
@@ -1131,6 +1150,10 @@ class AppState {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: {
+                    duration: 750,
+                    easing: 'easeInOutQuart'
+                },
                 plugins: {
                     legend: {
                         position: 'bottom',
@@ -1159,7 +1182,7 @@ class AppState {
         this.charts.project.data.labels = projectData.map(d => d.project);
         this.charts.project.data.datasets[0].data = projectData.map(d => d.totalTokens);
         this.charts.project.data.datasets[0].backgroundColor = colors.slice(0, projectData.length);
-        this.charts.project.update('none'); // アニメーションなしで更新
+        this.charts.project.update('active'); // 標準的な滑らかアニメーション
     }
 
     // 週別比較チャート
@@ -1200,6 +1223,10 @@ class AppState {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: {
+                    duration: 750,
+                    easing: 'easeInOutQuart'
+                },
                 plugins: {
                     legend: {
                         labels: {
@@ -1244,7 +1271,7 @@ class AppState {
         // データを更新（チャートを再作成せず）
         this.charts.weekly.data.datasets[0].data = currentWeek ? currentWeek.dailyTokens : new Array(7).fill(0);
         this.charts.weekly.data.datasets[1].data = previousWeek ? previousWeek.dailyTokens : new Array(7).fill(0);
-        this.charts.weekly.update('none'); // アニメーションなしで更新
+        this.charts.weekly.update('active'); // 標準的な滑らかアニメーション
     }
 
     // 日別データ集計
