@@ -403,14 +403,14 @@ const startFileWatcher = () => {
     fileWatcher = chokidar.watch(projectsDir, {
       ignored: /^\./, // Only ignore files starting with dot
       persistent: true,
-      ignoreInitial: false, // Detect initial files too
+      ignoreInitial: true, // !! CRITICAL: Skip initial scan to prevent startup flood
       depth: 99,
       usePolling: true, // Force polling mode
-      interval: 2000, // Poll every 2 seconds (less frequent)
-      binaryInterval: 2000,
+      interval: 5000, // Poll every 5 seconds (reduced frequency)
+      binaryInterval: 5000,
       awaitWriteFinish: {
-        stabilityThreshold: 1000, // Wait 1 second after last change
-        pollInterval: 100
+        stabilityThreshold: 2000, // Wait 2 seconds after last change
+        pollInterval: 500
       },
       followSymlinks: true,
       atomic: false, // Disable atomic writes detection
@@ -422,10 +422,10 @@ const startFileWatcher = () => {
     console.log('👀 Chokidar options:', {
       ignored: /^\./, 
       persistent: true,
-      ignoreInitial: false,
+      ignoreInitial: true, // FIXED: Skip initial scan
       depth: 99,
       usePolling: true,
-      interval: 500
+      interval: 5000
     });
 
     fileWatcher
