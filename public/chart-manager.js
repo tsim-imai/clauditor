@@ -86,7 +86,7 @@ class ChartManager {
                 color = '#f59e0b';
                 break;
         }
-        this.charts.usage.data.labels = dailyData.map(d => new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' }));
+        this.charts.usage.data.labels = dailyData.map(d => Utils.formatDate(d.date));
         this.charts.usage.data.datasets[0].data = data;
         this.charts.usage.data.datasets[0].label = label;
         this.charts.usage.data.datasets[0].borderColor = color;
@@ -161,7 +161,7 @@ class ChartManager {
         this.charts.usage = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: dailyData.map(d => new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })),
+                labels: dailyData.map(d => Utils.formatDate(d.date)),
                 datasets: [{
                     label: label,
                     data: data,
@@ -238,7 +238,7 @@ class ChartManager {
         }
         
         // データを更新（チャートを再作成せず）
-        this.charts.usage.data.labels = dailyData.map(d => new Date(d.date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' }));
+        this.charts.usage.data.labels = dailyData.map(d => Utils.formatDate(d.date));
         this.charts.usage.data.datasets[0].data = data;
         this.charts.usage.data.datasets[0].label = label;
         this.charts.usage.data.datasets[0].borderColor = color;

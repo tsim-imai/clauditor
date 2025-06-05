@@ -103,7 +103,7 @@ class LogDataProcessor {
     }
 
     /**
-     * アクティブ時間を計算
+     * アクティブ時間を計算（ローカル時間統一版）
      */
     calculateActiveHours(entries = null) {
         const targetEntries = entries || this.allLogEntries;
@@ -116,8 +116,12 @@ class LogDataProcessor {
             const entryDate = new Date(entry.timestamp);
             if (isNaN(entryDate.getTime())) return;
             
-            const date = entryDate.toISOString().split('T')[0];
-            const hour = entryDate.getUTCHours(); // UTC時間に統一
+            // ローカル日付に統一（UTCではなく）
+            const year = entryDate.getFullYear();
+            const month = (entryDate.getMonth() + 1).toString().padStart(2, '0');
+            const day = entryDate.getDate().toString().padStart(2, '0');
+            const date = `${year}-${month}-${day}`;
+            const hour = entryDate.getHours(); // ローカル時間に統一
             
             if (!dailyUsage.has(date)) {
                 dailyUsage.set(date, new Set());
@@ -139,12 +143,16 @@ class LogDataProcessor {
     aggregateDataByDay(entries) {
         const dailyMap = new Map();
 
-        // UTCベースの日付キー生成
+        // ローカル日付ベースのキー生成
         for (const entry of entries) {
             if (!entry.timestamp) continue;
             
-            // UTC日付キーを取得
-            const date = new Date(entry.timestamp).toISOString().split('T')[0];
+            // ローカル日付キーを生成
+            const entryDate = new Date(entry.timestamp);
+            const year = entryDate.getFullYear();
+            const month = (entryDate.getMonth() + 1).toString().padStart(2, '0');
+            const day = entryDate.getDate().toString().padStart(2, '0');
+            const date = `${year}-${month}-${day}`;
             if (!date) continue;
             
             if (!dailyMap.has(date)) {
@@ -182,8 +190,8 @@ class LogDataProcessor {
         for (const entry of entries) {
             if (!entry.timestamp) continue;
             
-            // UTC時間を取得
-            const hour = new Date(entry.timestamp).getUTCHours();
+            // ローカル時間を取得
+            const hour = new Date(entry.timestamp).getHours();
             if (hour >= 0 && hour <= 23) {
                 hourlyData[hour]++;
             }
@@ -240,7 +248,11 @@ class LogDataProcessor {
             const weekStart = new Date(date);
             weekStart.setDate(date.getDate() - date.getDay());
             weekStart.setHours(0, 0, 0, 0);
-            const weekKey = weekStart.toISOString().split('T')[0];
+            // ローカル日付キーを生成
+            const year = weekStart.getFullYear();
+            const month = (weekStart.getMonth() + 1).toString().padStart(2, '0');
+            const day = weekStart.getDate().toString().padStart(2, '0');
+            const weekKey = `${year}-${month}-${day}`;
 
             if (!weeklyMap.has(weekKey)) {
                 weeklyMap.set(weekKey, {
@@ -315,8 +327,11 @@ class LogDataProcessor {
             const entryDate = new Date(entry.timestamp);
             if (isNaN(entryDate.getTime())) return; // Skip invalid dates
             
-            // UTC日付キーを使用
-            const date = entryDate.toISOString().split('T')[0];
+            // ローカル日付キーを使用
+            const year = entryDate.getFullYear();
+            const month = (entryDate.getMonth() + 1).toString().padStart(2, '0');
+            const day = entryDate.getDate().toString().padStart(2, '0');
+            const date = `${year}-${month}-${day}`;
             if (!date) return;
             
             if (!this.dailyUsageData.has(date)) {
@@ -333,7 +348,7 @@ class LogDataProcessor {
             }
 
             const daily = this.dailyUsageData.get(date);
-            const hour = entryDate.getUTCHours();
+            const hour = entryDate.getHours();
             
             if (entry.message && entry.message.usage) {
                 const tokens = (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
@@ -376,12 +391,7 @@ class LogDataProcessor {
      * トークン数をフォーマット（カレンダー用）
      */
     formatTokens(tokens) {
-        if (tokens >= 10000) {
-            return `${Math.round(tokens / 1000)}k`;
-        } else if (tokens >= 1000) {
-            return `${(tokens / 1000).toFixed(1)}k`;
-        }
-        return tokens.toString();
+        return Utils.formatTokens(tokens);
     }
 
     /**
@@ -455,33 +465,39 @@ class LogDataProcessor {
      * 時間ブロック計算（ミニモード用）
      */
     calculateTimeBlock(time, timeRange) {
-        // 時間範囲に応じて適切な時間ブロックを生成
+        // 時間範囲に応じて適切な時間ブロックを生成（ローカル時間ベース）
+        const year = time.getFullYear();
+        const month = (time.getMonth() + 1).toString().padStart(2, '0');
+        const day = time.getDate().toString().padStart(2, '0');
+        const hour = time.getHours().toString().padStart(2, '0');
+        
         if (timeRange === '10m') {
             // 10分範囲：1分単位
-            return time.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+            const minute = time.getMinutes().toString().padStart(2, '0');
+            return `${year}-${month}-${day}T${hour}:${minute}`;
         } else if (timeRange === '30m') {
             // 30分範囲：2分単位
             const minutes = Math.floor(time.getMinutes() / 2) * 2;
-            return time.toISOString().slice(0, 13) + ':' + minutes.toString().padStart(2, '0');
+            return `${year}-${month}-${day}T${hour}:${minutes.toString().padStart(2, '0')}`;
         } else if (timeRange === '60m') {
             // 60分範囲：5分単位
             const minutes = Math.floor(time.getMinutes() / 5) * 5;
-            return time.toISOString().slice(0, 13) + ':' + minutes.toString().padStart(2, '0');
+            return `${year}-${month}-${day}T${hour}:${minutes.toString().padStart(2, '0')}`;
         } else if (timeRange == 3) {
             // 3時間：10分単位
             const minutes = Math.floor(time.getMinutes() / 10) * 10;
-            return time.toISOString().slice(0, 13) + ':' + minutes.toString().padStart(2, '0');
+            return `${year}-${month}-${day}T${hour}:${minutes.toString().padStart(2, '0')}`;
         } else if (timeRange == 6) {
             // 6時間：15分単位
             const minutes = Math.floor(time.getMinutes() / 15) * 15;
-            return time.toISOString().slice(0, 13) + ':' + minutes.toString().padStart(2, '0');
+            return `${year}-${month}-${day}T${hour}:${minutes.toString().padStart(2, '0')}`;
         } else if (timeRange == 12) {
             // 12時間：30分単位
             const minutes = Math.floor(time.getMinutes() / 30) * 30;
-            return time.toISOString().slice(0, 13) + ':' + minutes.toString().padStart(2, '0');
+            return `${year}-${month}-${day}T${hour}:${minutes.toString().padStart(2, '0')}`;
         } else {
             // 24時間：1時間単位
-            return time.toISOString().slice(0, 13);
+            return `${year}-${month}-${day}T${hour}`;
         }
     }
 

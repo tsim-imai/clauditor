@@ -299,12 +299,12 @@ class AppState {
         this.lastDataHash = currentDataHash;
     }
 
-    // ダッシュボードを更新（超軽量版 - 元の100ms設計に戻す）
+    // ダッシュボードを更新（統一された計算方式）
     updateDashboard() {
         
-        // **重要**: 必要最小限の処理のみ - 遅延計算方式に変更
+        // **修正**: 手動・自動更新で同じ計算方式を使用
         this.updateMessageStats();
-        this.updateStatsOverviewLightweight();
+        this.updateStatsOverview(); // 軽量版ではなく正確版を使用
         
         // チャート用の必要最小限データを一括取得
         const minimalData = this.dataProcessor.getAggregatedData(this.filteredEntries);
@@ -378,7 +378,7 @@ class AppState {
         this.dataProcessor.updateStatCard(4, {
             icon: periodConfig.card4.icon,
             label: periodConfig.card4.label,
-            value: callCount.toLocaleString(),
+            value: Utils.formatNumber(callCount),
             unit: 'calls'
         });
         
@@ -390,8 +390,8 @@ class AppState {
         
         // 簡易計算のみ
         const avgDaily = this.filteredEntries.length > 7 ? 
-            Math.round(this.filteredEntries.length / 7) : this.filteredEntries.length;
-        document.getElementById('avgDailyUsage').textContent = avgDaily.toLocaleString() + ' calls';
+            Utils.roundNumber(this.filteredEntries.length / 7) : this.filteredEntries.length;
+        document.getElementById('avgDailyUsage').textContent = Utils.formatNumber(avgDaily) + ' calls';
         
         // 他の値は概算または固定値
         document.getElementById('peakHour').textContent = '14:00 - 15:00'; // 一般的なピーク時間
@@ -465,14 +465,14 @@ class AppState {
         this.dataProcessor.updateStatCard(1, {
             icon: periodConfig.card1.icon,
             label: periodConfig.card1.label,
-            value: currentStats.totalTokens.toLocaleString(),
+            value: Utils.formatNumber(currentStats.totalTokens),
             unit: 'tokens'
         });
         
         this.dataProcessor.updateStatCard(2, {
             icon: periodConfig.card2.icon,
             label: periodConfig.card2.label,
-            value: `¥${Math.round(currentStats.costJPY).toLocaleString()}`,
+            value: Utils.formatCurrency(currentStats.costJPY),
             unit: 'JPY'
         });
         
@@ -489,7 +489,7 @@ class AppState {
             card4Value = this.projects.length.toString();
             card4Unit = 'projects';
         } else {
-            card4Value = comparisonStats.totalTokens.toLocaleString();
+            card4Value = Utils.formatNumber(comparisonStats.totalTokens);
             card4Unit = 'tokens';
         }
         
@@ -502,7 +502,7 @@ class AppState {
     }
 
 
-    // 比較期間のデータを取得（UTC統一版）
+    // 比較期間のデータを取得（ローカル時間統一版）
     getComparisonPeriodData() {
         const now = new Date();
         let comparisonStartDate, comparisonEndDate;
@@ -570,8 +570,8 @@ class AppState {
     // 洞察更新の共通処理
     updateInsightsCore(stats, dailyData, projectData, hourlyData) {
         // 平均日使用量
-        const avgDaily = dailyData.length > 0 ? Math.round(stats.totalTokens / dailyData.length) : 0;
-        document.getElementById('avgDailyUsage').textContent = avgDaily.toLocaleString() + ' tokens';
+        const avgDaily = dailyData.length > 0 ? Utils.roundNumber(stats.totalTokens / dailyData.length) : 0;
+        document.getElementById('avgDailyUsage').textContent = Utils.formatNumber(avgDaily) + ' tokens';
 
         // 最も活発な時間
         const peakHour = hourlyData.indexOf(Math.max(...hourlyData));
@@ -596,8 +596,8 @@ class AppState {
             <div class="project-item-compact">
                 <div class="project-name-compact">${project.project}</div>
                 <div class="project-stats-compact">
-                    ${project.totalTokens.toLocaleString()} tokens • 
-                    ${project.calls.toLocaleString()} calls
+                    ${Utils.formatNumber(project.totalTokens)} tokens • 
+                    ${Utils.formatNumber(project.calls)} calls
                 </div>
             </div>
         `).join('');

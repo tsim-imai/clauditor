@@ -174,20 +174,7 @@ class SettingsManager {
      * 時間の経過を表示用文字列に変換
      */
     getTimeAgo(date) {
-        const now = new Date();
-        const diffMs = now - date;
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffMinutes = Math.floor(diffMs / (1000 * 60));
-        
-        if (diffHours > 24) {
-            return `${Math.floor(diffHours / 24)}日前`;
-        } else if (diffHours > 0) {
-            return `${diffHours}時間前`;
-        } else if (diffMinutes > 0) {
-            return `${diffMinutes}分前`;
-        } else {
-            return '今';
-        }
+        return Utils.getTimeAgo(date);
     }
 
     /**
@@ -237,7 +224,7 @@ class SettingsManager {
             const result = await window.electronAPI.fetchExchangeRate();
             
             if (result.success) {
-                this.settings.exchangeRate = Math.round(result.rate * 100) / 100;
+                this.settings.exchangeRate = Utils.roundNumber(result.rate, 2);
                 this.settings.lastRateUpdate = result.timestamp;
                 this.settings.rateSource = result.source;
                 
