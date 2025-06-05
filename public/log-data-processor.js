@@ -693,4 +693,77 @@ class LogDataProcessor {
             return 0;
         }
     }
+
+    /**
+     * 期間設定を取得（UI表示用）
+     */
+    getPeriodConfiguration(currentPeriod) {
+        switch (currentPeriod) {
+            case 'today':
+                return {
+                    card1: { icon: 'today', label: '今日の使用量' },
+                    card2: { icon: 'attach_money', label: '今日のコスト' },
+                    card3: { icon: 'schedule', label: '今日の使用時間' },
+                    card4: { icon: 'yesterday', label: '前日の使用量' }
+                };
+            case 'week':
+                return {
+                    card1: { icon: 'date_range', label: '今週の使用量' },
+                    card2: { icon: 'attach_money', label: '今週のコスト' },
+                    card3: { icon: 'schedule', label: '今週の使用時間' },
+                    card4: { icon: 'compare_arrows', label: '先週の使用量' }
+                };
+            case 'month':
+                return {
+                    card1: { icon: 'calendar_month', label: '今月の使用量' },
+                    card2: { icon: 'attach_money', label: '今月のコスト' },
+                    card3: { icon: 'schedule', label: '今月の使用時間' },
+                    card4: { icon: 'compare_arrows', label: '先月の使用量' }
+                };
+            case 'year':
+                return {
+                    card1: { icon: 'calendar_view_year', label: '今年の使用量' },
+                    card2: { icon: 'attach_money', label: '今年のコスト' },
+                    card3: { icon: 'schedule', label: '今年の使用時間' },
+                    card4: { icon: 'compare_arrows', label: '昨年の使用量' }
+                };
+            case 'all':
+            default:
+                return {
+                    card1: { icon: 'trending_up', label: '総使用量' },
+                    card2: { icon: 'attach_money', label: '総コスト' },
+                    card3: { icon: 'schedule', label: '総使用時間' },
+                    card4: { icon: 'folder', label: 'プロジェクト数' }
+                };
+        }
+    }
+
+    /**
+     * 統計カードを更新（UIヘルパー）
+     */
+    updateStatCard(cardNumber, config) {
+        const iconElement = document.getElementById(`statIcon${cardNumber}`);
+        const labelElement = document.getElementById(`statLabel${cardNumber}`);
+        const valueElement = document.getElementById(`statValue${cardNumber}`);
+        const unitElement = document.getElementById(`statUnit${cardNumber}`);
+        
+        if (iconElement) iconElement.textContent = config.icon;
+        if (labelElement) labelElement.textContent = config.label;
+        if (valueElement) valueElement.textContent = config.value;
+        if (unitElement) unitElement.textContent = config.unit;
+    }
+
+    /**
+     * 集計データを一括取得（パフォーマンス最適化）
+     */
+    getAggregatedData(filteredEntries) {
+        return {
+            stats: this.calculateStats(filteredEntries),
+            activeHours: this.calculateActiveHours(filteredEntries),
+            dailyData: this.aggregateDataByDay(filteredEntries),
+            hourlyData: this.aggregateDataByHour(filteredEntries),
+            projectData: this.aggregateDataByProject(filteredEntries),
+            weeklyData: this.aggregateDataByWeek(filteredEntries)
+        };
+    }
 }

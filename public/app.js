@@ -306,13 +306,8 @@ class AppState {
         this.updateMessageStats();
         this.updateStatsOverviewLightweight();
         
-        // チャート用の必要最小限データを事前計算
-        const minimalData = {
-            dailyData: this.dataProcessor.aggregateDataByDay(this.filteredEntries),
-            hourlyData: this.dataProcessor.aggregateDataByHour(this.filteredEntries),
-            projectData: this.dataProcessor.aggregateDataByProject(this.filteredEntries),
-            weeklyData: this.dataProcessor.aggregateDataByWeek(this.filteredEntries)
-        };
+        // チャート用の必要最小限データを一括取得
+        const minimalData = this.dataProcessor.getAggregatedData(this.filteredEntries);
         
         // チャートは既存のものがあればサイレント更新、なければ新規作成
         if (this.chartManager.hasChart('usage')) {
@@ -355,24 +350,24 @@ class AppState {
         const estimatedActiveHours = Math.min(timeSpan, callCount * 0.1); // 1コール=6分と仮定
         
         // 期間設定を取得
-        const periodConfig = this.getPeriodConfiguration();
+        const periodConfig = this.dataProcessor.getPeriodConfiguration(this.currentPeriod);
         
         // 統計カードを即座に更新
-        this.updateStatCard(1, {
+        this.dataProcessor.updateStatCard(1, {
             icon: periodConfig.card1.icon,
             label: periodConfig.card1.label,
             value: totalTokens.toLocaleString(),
             unit: 'tokens'
         });
         
-        this.updateStatCard(2, {
+        this.dataProcessor.updateStatCard(2, {
             icon: periodConfig.card2.icon,
             label: periodConfig.card2.label,
             value: `¥${Math.round(totalCostJPY).toLocaleString()}`,
             unit: 'JPY'
         });
         
-        this.updateStatCard(3, {
+        this.dataProcessor.updateStatCard(3, {
             icon: periodConfig.card3.icon,
             label: periodConfig.card3.label,
             value: estimatedActiveHours.toFixed(1),
@@ -380,7 +375,7 @@ class AppState {
         });
         
         // 4番目のカードは簡易版
-        this.updateStatCard(4, {
+        this.dataProcessor.updateStatCard(4, {
             icon: periodConfig.card4.icon,
             label: periodConfig.card4.label,
             value: callCount.toLocaleString(),
@@ -451,17 +446,8 @@ class AppState {
 
     // 統計概要を更新
     updateStatsOverview() {
-        const now = new Date();
-        
-        // 現在の期間のデータを計算
-        const currentStats = this.dataProcessor.calculateStats(this.filteredEntries);
-        const currentActiveHours = this.dataProcessor.calculateActiveHours(this.filteredEntries);
-        
-        this.updateStatsOverviewCore(currentStats, currentActiveHours);
-    }
-    
-    // キャッシュ対応の統計概要更新
-    updateStatsOverviewWithCache(aggregatedData) {
+        // 現在の期間のデータを一括計算
+        const aggregatedData = this.dataProcessor.getAggregatedData(this.filteredEntries);
         this.updateStatsOverviewCore(aggregatedData.stats, aggregatedData.activeHours);
     }
     
@@ -473,24 +459,24 @@ class AppState {
         const comparisonStats = this.dataProcessor.calculateStats(comparisonData);
         
         // 期間に応じてラベルとアイコンを設定
-        const periodConfig = this.getPeriodConfiguration();
+        const periodConfig = this.dataProcessor.getPeriodConfiguration(this.currentPeriod);
         
         // 統計カードを更新
-        this.updateStatCard(1, {
+        this.dataProcessor.updateStatCard(1, {
             icon: periodConfig.card1.icon,
             label: periodConfig.card1.label,
             value: currentStats.totalTokens.toLocaleString(),
             unit: 'tokens'
         });
         
-        this.updateStatCard(2, {
+        this.dataProcessor.updateStatCard(2, {
             icon: periodConfig.card2.icon,
             label: periodConfig.card2.label,
             value: `¥${Math.round(currentStats.costJPY).toLocaleString()}`,
             unit: 'JPY'
         });
         
-        this.updateStatCard(3, {
+        this.dataProcessor.updateStatCard(3, {
             icon: periodConfig.card3.icon,
             label: periodConfig.card3.label,
             value: currentActiveHours.toFixed(1),
@@ -507,7 +493,7 @@ class AppState {
             card4Unit = 'tokens';
         }
         
-        this.updateStatCard(4, {
+        this.dataProcessor.updateStatCard(4, {
             icon: periodConfig.card4.icon,
             label: periodConfig.card4.label,
             value: card4Value,
@@ -515,47 +501,6 @@ class AppState {
         });
     }
 
-    // 期間設定を取得
-    getPeriodConfiguration() {
-        switch (this.currentPeriod) {
-            case 'today':
-                return {
-                    card1: { icon: 'today', label: '今日の使用量' },
-                    card2: { icon: 'attach_money', label: '今日のコスト' },
-                    card3: { icon: 'schedule', label: '今日の使用時間' },
-                    card4: { icon: 'yesterday', label: '前日の使用量' }
-                };
-            case 'week':
-                return {
-                    card1: { icon: 'date_range', label: '今週の使用量' },
-                    card2: { icon: 'attach_money', label: '今週のコスト' },
-                    card3: { icon: 'schedule', label: '今週の使用時間' },
-                    card4: { icon: 'compare_arrows', label: '先週の使用量' }
-                };
-            case 'month':
-                return {
-                    card1: { icon: 'calendar_month', label: '今月の使用量' },
-                    card2: { icon: 'attach_money', label: '今月のコスト' },
-                    card3: { icon: 'schedule', label: '今月の使用時間' },
-                    card4: { icon: 'compare_arrows', label: '先月の使用量' }
-                };
-            case 'year':
-                return {
-                    card1: { icon: 'calendar_view_year', label: '今年の使用量' },
-                    card2: { icon: 'attach_money', label: '今年のコスト' },
-                    card3: { icon: 'schedule', label: '今年の使用時間' },
-                    card4: { icon: 'compare_arrows', label: '昨年の使用量' }
-                };
-            case 'all':
-            default:
-                return {
-                    card1: { icon: 'trending_up', label: '総使用量' },
-                    card2: { icon: 'attach_money', label: '総コスト' },
-                    card3: { icon: 'schedule', label: '総使用時間' },
-                    card4: { icon: 'folder', label: 'プロジェクト数' }
-                };
-        }
-    }
 
     // 比較期間のデータを取得（UTC統一版）
     getComparisonPeriodData() {
@@ -601,13 +546,6 @@ class AppState {
         });
     }
 
-    // 統計カードを更新
-    updateStatCard(cardNumber, config) {
-        document.getElementById(`statIcon${cardNumber}`).textContent = config.icon;
-        document.getElementById(`statLabel${cardNumber}`).textContent = config.label;
-        document.getElementById(`statValue${cardNumber}`).textContent = config.value;
-        document.getElementById(`statUnit${cardNumber}`).textContent = config.unit;
-    }
 
 
 
@@ -625,16 +563,7 @@ class AppState {
 
     // 洞察を更新
     updateInsights() {
-        const stats = this.dataProcessor.calculateStats(this.filteredEntries);
-        const dailyData = this.dataProcessor.aggregateDataByDay(this.filteredEntries);
-        const projectData = this.dataProcessor.aggregateDataByProject(this.filteredEntries);
-        const hourlyData = this.dataProcessor.aggregateDataByHour(this.filteredEntries);
-        
-        this.updateInsightsCore(stats, dailyData, projectData, hourlyData);
-    }
-    
-    // キャッシュ対応の洞察更新
-    updateInsightsWithCache(aggregatedData) {
+        const aggregatedData = this.dataProcessor.getAggregatedData(this.filteredEntries);
         this.updateInsightsCore(aggregatedData.stats, aggregatedData.dailyData, aggregatedData.projectData, aggregatedData.hourlyData);
     }
     
@@ -655,15 +584,9 @@ class AppState {
 
     // プロジェクト一覧を更新
     updateProjectList() {
+        // 全プロジェクトの集計データを使用（期間フィルターの影響を受けない）
         const projectData = this.dataProcessor.aggregateDataByProject(this.dataProcessor.getAllLogEntries());
         this.updateProjectListCore(projectData);
-    }
-    
-    // キャッシュ対応のプロジェクト一覧更新
-    updateProjectListWithCache(aggregatedData) {
-        // 全プロジェクトの集計データを使用（期間フィルターの影響を受けない）
-        const allProjectData = this.dataProcessor.aggregateDataByProject(this.dataProcessor.getAllLogEntries());
-        this.updateProjectListCore(allProjectData);
     }
     
     // プロジェクト一覧更新の共通処理
