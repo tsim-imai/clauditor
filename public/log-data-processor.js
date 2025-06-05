@@ -3,14 +3,11 @@
  * ファイル読み込み、データ集計、フィルタリングなどの処理を行う
  */
 class LogDataProcessor {
-    constructor(settings = {}, timezoneManager = null) {
+    constructor(settings = {}) {
         this.exchangeRate = settings.exchangeRate || 150;
         this.allLogEntries = [];
         this.allProjectsData = new Map();
         this.dailyUsageData = new Map();
-        
-        // TimezoneManagerインスタンス
-        this.timezoneManager = timezoneManager || new TimezoneManager(settings.timezone);
         
         // 高速集計のためのプリキャッシュ
         this.precomputedAggregations = new Map();
@@ -21,9 +18,6 @@ class LogDataProcessor {
      */
     updateSettings(settings) {
         this.exchangeRate = settings.exchangeRate || 150;
-        if (settings.timezone) {
-            this.timezoneManager.setUserTimezone(settings.timezone);
-        }
     }
 
     /**
@@ -54,17 +48,13 @@ class LogDataProcessor {
     }
 
     /**
-     * 期間でデータをフィルタリング（超高速版）
+     * 期間でデータをフィルタリング（UTC統一版）
      */
     filterDataByPeriod(period) {
-        console.time('filterDataByPeriod');
-        
         if (period === 'all') {
-            console.timeEnd('filterDataByPeriod');
             return [...this.allLogEntries];
         }
 
-        // 高速フィルタリング: UTC時間ベースで概算計算
         const now = new Date();
         let cutoffTime;
         
@@ -76,54 +66,25 @@ class LogDataProcessor {
                 const weekStart = new Date(now);
                 weekStart.setDate(now.getDate() - now.getDay());
                 weekStart.setHours(0, 0, 0, 0);
-                cutoffTime = weekStart.getTime() - (9 * 60 * 60 * 1000); // JST offset考慮
+                cutoffTime = weekStart.getTime();
                 break;
             case 'month':
-                cutoffTime = new Date(now.getFullYear(), now.getMonth(), 1).getTime() - (9 * 60 * 60 * 1000);
+                cutoffTime = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
                 break;
             case 'year':
-                cutoffTime = new Date(now.getFullYear(), 0, 1).getTime() - (9 * 60 * 60 * 1000);
+                cutoffTime = new Date(now.getFullYear(), 0, 1).getTime();
                 break;
             default:
                 cutoffTime = 0;
         }
         
-        // 単純な時間比較で高速フィルタリング
-        const result = [];
-        for (let i = 0; i < this.allLogEntries.length; i++) {
-            const entry = this.allLogEntries[i];
-            if (!entry.timestamp) continue;
-            
-            const entryTime = new Date(entry.timestamp).getTime();
-            if (isNaN(entryTime) || entryTime < cutoffTime) continue;
-            
-            result.push(entry);
-        }
-        
-        console.timeEnd('filterDataByPeriod');
-        return result;
-    }
-
-    /**
-     * 比較期間のデータを取得
-     */
-    getComparisonPeriodData(period) {
-        const { startDate, endDate } = this.timezoneManager.getComparisonPeriodDates(period);
-        
-        if (!startDate || !endDate) {
-            return [];
-        }
-
         return this.allLogEntries.filter(entry => {
             if (!entry.timestamp) return false;
-            const entryDate = new Date(entry.timestamp);
-            if (isNaN(entryDate.getTime())) return false;
-            
-            // UTCのエントリ時刻をユーザータイムゾーンで比較
-            const localEntryDate = this.timezoneManager.utcToUserTimezone(entry.timestamp);
-            return localEntryDate >= startDate && localEntryDate <= endDate;
+            const entryTime = new Date(entry.timestamp).getTime();
+            return !isNaN(entryTime) && entryTime >= cutoffTime;
         });
     }
+
 
     /**
      * 統計を計算
@@ -156,7 +117,7 @@ class LogDataProcessor {
             if (isNaN(entryDate.getTime())) return;
             
             const date = entryDate.toISOString().split('T')[0];
-            const hour = entryDate.getHours();
+            const hour = entryDate.getUTCHours(); // UTC時間に統一
             
             if (!dailyUsage.has(date)) {
                 dailyUsage.set(date, new Set());
@@ -176,20 +137,15 @@ class LogDataProcessor {
      * 日別データ集計（高速版）
      */
     aggregateDataByDay(entries) {
-        console.time('aggregateDataByDay');
         const dailyMap = new Map();
 
-        // 高速処理: タイムゾーン変換を最小限に
-        for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i];
+        // UTCベースの日付キー生成
+        for (const entry of entries) {
             if (!entry.timestamp) continue;
             
-            // 簡易日付キー生成（UTC+9時間のオフセットで近似）
-            const utcDate = new Date(entry.timestamp);
-            if (isNaN(utcDate.getTime())) continue;
-            
-            const localDate = new Date(utcDate.getTime() + 9 * 60 * 60 * 1000); // JST offset
-            const date = localDate.toISOString().split('T')[0];
+            // UTC日付キーを取得
+            const date = new Date(entry.timestamp).toISOString().split('T')[0];
+            if (!date) continue;
             
             if (!dailyMap.has(date)) {
                 dailyMap.set(date, {
@@ -214,7 +170,6 @@ class LogDataProcessor {
             new Date(a.date).getTime() - new Date(b.date).getTime()
         );
         
-        console.timeEnd('aggregateDataByDay');
         return result;
     }
 
@@ -222,26 +177,18 @@ class LogDataProcessor {
      * 時間別データ集計（高速版）
      */
     aggregateDataByHour(entries) {
-        console.time('aggregateDataByHour');
         const hourlyData = new Array(24).fill(0);
 
-        for (let i = 0; i < entries.length; i++) {
-            const entry = entries[i];
+        for (const entry of entries) {
             if (!entry.timestamp) continue;
             
-            const utcDate = new Date(entry.timestamp);
-            if (isNaN(utcDate.getTime())) continue;
-            
-            // 簡易時間計算（UTC+9時間）
-            const localDate = new Date(utcDate.getTime() + 9 * 60 * 60 * 1000);
-            const hour = localDate.getHours();
-            
+            // UTC時間を取得
+            const hour = new Date(entry.timestamp).getUTCHours();
             if (hour >= 0 && hour <= 23) {
                 hourlyData[hour]++;
             }
         }
 
-        console.timeEnd('aggregateDataByHour');
         return hourlyData;
     }
 
@@ -249,7 +196,6 @@ class LogDataProcessor {
      * プロジェクト別データ集計（高速版）
      */
     aggregateDataByProject(entries) {
-        console.time('aggregateDataByProject');
         const projectMap = new Map();
 
         for (let i = 0; i < entries.length; i++) {
@@ -277,7 +223,6 @@ class LogDataProcessor {
             .sort((a, b) => b.totalTokens - a.totalTokens)
             .slice(0, 8); // 上位8プロジェクト
             
-        console.timeEnd('aggregateDataByProject');
         return result;
     }
 
@@ -351,6 +296,14 @@ class LogDataProcessor {
         return this.dailyUsageData;
     }
 
+
+    /**
+     * 日別使用量データを取得
+     */
+    getDailyUsageData() {
+        return this.dailyUsageData;
+    }
+
     /**
      * バッチ処理で日別使用量データを処理
      */
@@ -362,8 +315,8 @@ class LogDataProcessor {
             const entryDate = new Date(entry.timestamp);
             if (isNaN(entryDate.getTime())) return; // Skip invalid dates
             
-            // ユーザータイムゾーンでの日付キーを使用
-            const date = this.timezoneManager.getLocalDateKey(entry.timestamp);
+            // UTC日付キーを使用
+            const date = entryDate.toISOString().split('T')[0];
             if (!date) return;
             
             if (!this.dailyUsageData.has(date)) {
@@ -380,25 +333,55 @@ class LogDataProcessor {
             }
 
             const daily = this.dailyUsageData.get(date);
-            const hour = this.timezoneManager.getLocalHour(entry.timestamp);
+            const hour = entryDate.getUTCHours();
             
             if (entry.message && entry.message.usage) {
                 const tokens = (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
                 daily.totalTokens += tokens;
-                if (hour !== null && hour >= 0 && hour <= 23) {
+                if (hour >= 0 && hour <= 23) {
                     daily.hourlyUsage[hour] += tokens;
                 }
             }
             daily.costUSD += entry.costUSD || 0;
             daily.costJPY += (entry.costUSD || 0) * this.exchangeRate;
             daily.calls += 1;
-            if (hour !== null && hour >= 0 && hour <= 23) {
+            if (hour >= 0 && hour <= 23) {
                 daily.activeHours.add(hour);
             }
             if (entry.projectName) {
                 daily.projects.add(entry.projectName);
             }
         });
+    }
+
+
+    /**
+     * 使用量レベルを計算（カレンダー用）
+     */
+    getUsageLevel(tokens) {
+        if (tokens === 0) return 0;
+        
+        // 全データから最大値を取得してレベルを計算
+        const maxTokens = Math.max(...Array.from(this.dailyUsageData.values()).map(d => d.totalTokens));
+        if (maxTokens === 0) return 0;
+        
+        const ratio = tokens / maxTokens;
+        if (ratio <= 0.2) return 1;
+        if (ratio <= 0.4) return 2;
+        if (ratio <= 0.7) return 3;
+        return 4;
+    }
+
+    /**
+     * トークン数をフォーマット（カレンダー用）
+     */
+    formatTokens(tokens) {
+        if (tokens >= 10000) {
+            return `${Math.round(tokens / 1000)}k`;
+        } else if (tokens >= 1000) {
+            return `${(tokens / 1000).toFixed(1)}k`;
+        }
+        return tokens.toString();
     }
 
     /**
@@ -431,26 +414,7 @@ class LogDataProcessor {
     }
 
     /**
-     * メッセージ統計を計算
-     */
-    calculateMessageStats(entries = null) {
-        const targetEntries = entries || this.allLogEntries;
-        let userMessages = 0;
-        let assistantMessages = 0;
-        
-        targetEntries.forEach(entry => {
-            if (entry.type === 'user') {
-                userMessages++;
-            } else if (entry.type === 'assistant') {
-                assistantMessages++;
-            }
-        });
-        
-        return { userMessages, assistantMessages };
-    }
-
-    /**
-     * ミニモード用の統計を計算
+     * ミニモード用統計を計算
      */
     getMiniModeStats(timeRange) {
         const timeRangeEntries = this.getTimeRangeEntries(timeRange);
@@ -466,16 +430,15 @@ class LogDataProcessor {
                 const outputTokens = entry.message.usage.output_tokens || 0;
                 totalTokens += inputTokens + outputTokens;
             }
-            
             if (entry.costUSD) {
                 totalCostJPY += entry.costUSD * this.exchangeRate;
             }
             
             // 使用時間の計算（時間単位に応じて調整）
             if (entry.timestamp) {
-                const time = new Date(entry.timestamp);
-                if (!isNaN(time.getTime())) {
-                    const timeBlock = this.getTimeBlock(time, timeRange);
+                const entryTime = new Date(entry.timestamp);
+                if (!isNaN(entryTime.getTime())) {
+                    const timeBlock = this.calculateTimeBlock(entryTime, timeRange);
                     uniqueHours.add(timeBlock);
                 }
             }
@@ -489,9 +452,9 @@ class LogDataProcessor {
     }
 
     /**
-     * 時間ブロックを取得
+     * 時間ブロック計算（ミニモード用）
      */
-    getTimeBlock(time, timeRange) {
+    calculateTimeBlock(time, timeRange) {
         // 時間範囲に応じて適切な時間ブロックを生成
         if (timeRange === '10m') {
             // 10分範囲：1分単位
@@ -523,33 +486,104 @@ class LogDataProcessor {
     }
 
     /**
-     * ブロック数を実際の時間に変換
+     * 表示用時間計算（ミニモード用）
      */
     calculateDisplayHours(blockCount, timeRange) {
-        // ブロック数を実際の時間に変換
         if (timeRange === '10m') {
             // 1分単位 → 時間
             return blockCount / 60;
         } else if (timeRange === '30m') {
             // 2分単位 → 時間
-            return blockCount / 30;
+            return blockCount * 2 / 60;
         } else if (timeRange === '60m') {
             // 5分単位 → 時間
-            return blockCount / 12;
+            return blockCount * 5 / 60;
         } else if (timeRange == 3) {
             // 10分単位 → 時間
-            return blockCount / 6;
+            return blockCount * 10 / 60;
         } else if (timeRange == 6) {
             // 15分単位 → 時間
-            return blockCount / 4;
+            return blockCount * 15 / 60;
         } else if (timeRange == 12) {
             // 30分単位 → 時間
-            return blockCount / 2;
+            return blockCount * 30 / 60;
         } else {
             // 1時間単位
             return blockCount;
         }
     }
+
+    /**
+     * ミニチャート設定を取得
+     */
+    getMiniChartConfig(timeRange) {
+        // 時間範囲に応じてチャート設定を返す
+        if (timeRange === '10m') {
+            return { pointCount: 10, intervalMinutes: 1 }; // 10分、1分間隔
+        } else if (timeRange === '30m') {
+            return { pointCount: 15, intervalMinutes: 2 }; // 30分、2分間隔
+        } else if (timeRange === '60m') {
+            return { pointCount: 12, intervalMinutes: 5 }; // 60分、5分間隔
+        } else if (timeRange == 3) {
+            return { pointCount: 18, intervalMinutes: 10 }; // 3時間、10分間隔
+        } else if (timeRange == 6) {
+            return { pointCount: 24, intervalMinutes: 15 }; // 6時間、15分間隔
+        } else if (timeRange == 12) {
+            return { pointCount: 24, intervalMinutes: 30 }; // 12時間、30分間隔
+        } else { // 24時間
+            return { pointCount: 24, intervalMinutes: 60 }; // 24時間、1時間間隔
+        }
+    }
+
+    /**
+     * 特定時間ブロックのトークン数を取得（ミニモード用）
+     */
+    getTokensForTimeBlock(time, timeRange) {
+        const entries = this.getTimeRangeEntries(timeRange);
+        const blockStart = new Date(time);
+        let blockEnd;
+        
+        if (timeRange === '10m') {
+            blockEnd = new Date(blockStart.getTime() + 60 * 1000); // 1分間隔
+        } else if (timeRange === '30m') {
+            blockEnd = new Date(blockStart.getTime() + 2 * 60 * 1000); // 2分間隔
+        } else if (timeRange === '60m') {
+            blockEnd = new Date(blockStart.getTime() + 5 * 60 * 1000); // 5分間隔
+        } else {
+            blockEnd = new Date(blockStart.getTime() + 60 * 60 * 1000); // 1時間間隔
+        }
+        
+        let tokens = 0;
+        entries.forEach(entry => {
+            const entryTime = new Date(entry.timestamp);
+            if (entryTime >= blockStart && entryTime < blockEnd && entry.message?.usage) {
+                tokens += (entry.message.usage.input_tokens || 0) + 
+                         (entry.message.usage.output_tokens || 0);
+            }
+        });
+        
+        return tokens;
+    }
+
+    /**
+     * メッセージ統計を計算
+     */
+    calculateMessageStats(entries = null) {
+        const targetEntries = entries || this.allLogEntries;
+        let userMessages = 0;
+        let assistantMessages = 0;
+        
+        targetEntries.forEach(entry => {
+            if (entry.type === 'user') {
+                userMessages++;
+            } else if (entry.type === 'assistant') {
+                assistantMessages++;
+            }
+        });
+        
+        return { userMessages, assistantMessages };
+    }
+
 
     /**
      * 全データを取得
@@ -576,7 +610,7 @@ class LogDataProcessor {
      * 特定時間ブロックのトークン数を取得
      */
     getTokensForTimeBlock(time, timeRange) {
-        const timeBlock = this.getTimeBlock(time, timeRange);
+        const timeBlock = this.calculateTimeBlock(time, timeRange);
         
         let tokens = 0;
         this.allLogEntries.forEach(entry => {
@@ -586,7 +620,7 @@ class LogDataProcessor {
             const entryTime = new Date(entry.timestamp);
             if (isNaN(entryTime.getTime())) return; // Skip invalid dates
             
-            const entryTimeBlock = this.getTimeBlock(entryTime, timeRange);
+            const entryTimeBlock = this.calculateTimeBlock(entryTime, timeRange);
             
             if (entryTimeBlock === timeBlock) {
                 if (entry.message?.usage) {
@@ -618,6 +652,45 @@ class LogDataProcessor {
             return { pointCount: 24, intervalMinutes: 30 }; // 12時間、30分間隔
         } else { // 24時間
             return { pointCount: 24, intervalMinutes: 60 }; // 24時間、1時間間隔
+        }
+    }
+
+    /**
+     * ミニチャート時間フォーマット（ミニモード用）
+     */
+    formatMiniChartTime(time, timeRange) {
+        if (timeRange === '10m' || timeRange === '30m' || timeRange === '60m') {
+            // 分単位の場合は秒も表示
+            const minutes = this.getRoundedMinutes(time, timeRange);
+            return time.getHours().toString().padStart(2, '0') + ':' + 
+                   minutes.toString().padStart(2, '0');
+        } else if (timeRange == 24) {
+            return time.getHours().toString().padStart(2, '0') + ':00';
+        } else {
+            const minutes = this.getRoundedMinutes(time, timeRange);
+            return time.getHours().toString().padStart(2, '0') + ':' + 
+                   minutes.toString().padStart(2, '0');
+        }
+    }
+
+    /**
+     * 時間範囲に応じた分数を取得（ミニモード用）
+     */
+    getRoundedMinutes(time, timeRange) {
+        if (timeRange === '10m') {
+            return time.getMinutes();
+        } else if (timeRange === '30m') {
+            return Math.floor(time.getMinutes() / 2) * 2;
+        } else if (timeRange === '60m') {
+            return Math.floor(time.getMinutes() / 5) * 5;
+        } else if (timeRange == 3) {
+            return Math.floor(time.getMinutes() / 10) * 10;
+        } else if (timeRange == 6) {
+            return Math.floor(time.getMinutes() / 15) * 15;
+        } else if (timeRange == 12) {
+            return Math.floor(time.getMinutes() / 30) * 30;
+        } else {
+            return 0;
         }
     }
 }
