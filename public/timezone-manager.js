@@ -84,8 +84,12 @@ class TimezoneManager {
             return formatter.format(utcDate);
         } catch (error) {
             console.warn('Failed to get local date key:', error);
-            // フォールバック: UTCベースの日付キー
-            return new Date(utcString).toISOString().split('T')[0];
+            // フォールバック: ローカル時間ベースの日付キー
+            const fallbackDate = new Date(utcString);
+            const year = fallbackDate.getFullYear();
+            const month = (fallbackDate.getMonth() + 1).toString().padStart(2, '0');
+            const day = fallbackDate.getDate().toString().padStart(2, '0');
+            return `${year}-${month}-${day}`;
         }
     }
 
@@ -109,8 +113,8 @@ class TimezoneManager {
             return parseInt(formatter.format(utcDate), 10);
         } catch (error) {
             console.warn('Failed to get local hour:', error);
-            // フォールバック: UTC時間
-            return new Date(utcString).getUTCHours();
+            // フォールバック: ローカル時間
+            return new Date(utcString).getHours();
         }
     }
 
@@ -125,7 +129,12 @@ class TimezoneManager {
      * ユーザータイムゾーンでの今日の日付キーを取得
      */
     getTodayDateKey() {
-        return this.getLocalDateKey(new Date().toISOString());
+        // 直接ローカル時間で今日の日付キーを生成
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 
     /**

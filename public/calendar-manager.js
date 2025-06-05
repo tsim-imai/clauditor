@@ -81,7 +81,11 @@ class CalendarManager {
         const dayElement = document.createElement('div');
         dayElement.className = 'calendar-day';
         
-        const dateKey = date.toISOString().split('T')[0];
+        // ローカル日付キーを生成
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        const dateKey = `${year}-${month}-${day}`;
         const dayNumber = date.getDate();
         const isCurrentMonth = date.getMonth() === currentMonth;
         const isToday = this.isToday(date);
@@ -148,7 +152,11 @@ class CalendarManager {
      * 選択された日付の情報を更新
      */
     updateSelectedDateInfo(date) {
-        const dateKey = date.toISOString().split('T')[0];
+        // ローカル日付キーを生成
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        const dateKey = `${year}-${month}-${day}`;
         const dailyData = this.dataProcessor.getDailyUsageData().get(dateKey);
         
         // タイトルを更新
@@ -183,7 +191,11 @@ class CalendarManager {
      * 選択日のプロジェクト別チャートを更新
      */
     updateDailyProjectChart(date) {
-        const dateKey = date.toISOString().split('T')[0];
+        // ローカル日付キーを生成
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        const dateKey = `${year}-${month}-${day}`;
         const dayEntries = this.dataProcessor.getAllLogEntries().filter(entry => {
             return entry.timestamp && typeof entry.timestamp === 'string' && entry.timestamp.startsWith(dateKey);
         });
