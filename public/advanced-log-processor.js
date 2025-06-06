@@ -49,12 +49,22 @@ class AdvancedLogDataProcessor {
                                 outputTokens: 0,
                                 costUSD: 0,
                                 costJPY: 0,
-                                entries: 0
+                                entries: 0,
+                                firstTimestamp: entryDate,
+                                lastTimestamp: entryDate
                             });
                         }
                         
                         const dayData = dailyStats.get(dateKey);
                         dayData.entries++;
+                        
+                        // 最初と最後のタイムスタンプを更新
+                        if (entryDate < dayData.firstTimestamp) {
+                            dayData.firstTimestamp = entryDate;
+                        }
+                        if (entryDate > dayData.lastTimestamp) {
+                            dayData.lastTimestamp = entryDate;
+                        }
                         
                         // usageデータ処理
                         if (entry.message?.usage) {
@@ -320,17 +330,25 @@ class AdvancedLogDataProcessor {
                     return await this.getAllTimestamps();
             }
             
-            // キャッシュされた日別統計から期間内の日付を抽出
-            const filteredDates = Array.from(allStats.values())
+            // キャッシュされた日別統計から期間内の精密タイムスタンプを抽出
+            const timestamps = [];
+            
+            Array.from(allStats.values())
                 .filter(stat => {
                     const statDate = new Date(stat.date);
                     return statDate >= startDate && statDate <= now;
                 })
-                .map(stat => new Date(stat.date));
+                .forEach(stat => {
+                    // 各日の最初と最後のタイムスタンプを追加
+                    timestamps.push(stat.firstTimestamp);
+                    if (stat.firstTimestamp.getTime() !== stat.lastTimestamp.getTime()) {
+                        timestamps.push(stat.lastTimestamp);
+                    }
+                });
             
-            // 日付をソート（統計は日単位なので、日付の開始時刻を使用）
-            filteredDates.sort((a, b) => a - b);
-            return filteredDates;
+            // タイムスタンプをソート
+            timestamps.sort((a, b) => a - b);
+            return timestamps;
             
         } catch (error) {
             console.error('期間タイムスタンプ取得エラー:', error);
@@ -346,12 +364,20 @@ class AdvancedLogDataProcessor {
             // キャッシュされた全統計データを取得（ファイル読み込み回避）
             const allStats = await this.calculateAllDailyStats();
             
-            // 日別統計から全期間の日付を抽出
-            const allDates = Array.from(allStats.values())
-                .map(stat => new Date(stat.date));
+            // 日別統計から全期間の精密タイムスタンプを抽出
+            const timestamps = [];
             
-            allDates.sort((a, b) => a - b);
-            return allDates;
+            Array.from(allStats.values())
+                .forEach(stat => {
+                    // 各日の最初と最後のタイムスタンプを追加
+                    timestamps.push(stat.firstTimestamp);
+                    if (stat.firstTimestamp.getTime() !== stat.lastTimestamp.getTime()) {
+                        timestamps.push(stat.lastTimestamp);
+                    }
+                });
+            
+            timestamps.sort((a, b) => a - b);
+            return timestamps;
             
         } catch (error) {
             console.error('全タイムスタンプ取得エラー:', error);
