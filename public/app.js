@@ -2,7 +2,6 @@
 class AppState {
     constructor() {
         this.projects = [];
-        this.filteredEntries = [];
         this.currentPeriod = 'today';
         this.charts = {};
         this.currentView = 'dashboard'; // 'dashboard' or 'calendar'
@@ -10,16 +9,8 @@ class AppState {
         this.error = null;
         this.refreshDebounceTimer = null;
         
-        // パフォーマンス最適化: フィルタリング結果キャッシュ
-        this.periodFilterCache = new Map();
-        this.aggregationCache = new Map(); // 集計結果キャッシュ
-        this.lastDataHash = null;
-        
-        // LogDataProcessorインスタンスを作成
-        this.dataProcessor = new LogDataProcessor(this.settings);
-        
         // AdvancedLogDataProcessorインスタンスを作成（全ファイル対応）
-        this.advancedProcessor = new AdvancedLogDataProcessor(this.settings);
+        this.dataProcessor = new AdvancedLogDataProcessor(this.settings);
         
         // MiniModeManagerインスタンスを作成
         this.miniModeManager = new MiniModeManager(this.dataProcessor, this.settings);
@@ -37,14 +28,58 @@ class AppState {
         // 設定変更時のコールバックを設定
         this.settingsManager.setOnSettingsChange((newSettings) => {
             this.settings = newSettings;
-            this.dataProcessor.updateSettings(this.settings);
-            this.advancedProcessor.exchangeRate = this.settings.exchangeRate;
+            this.dataProcessor.exchangeRate = this.settings.exchangeRate;
             this.miniModeManager.updateSettings(this.settings);
             this.calendarManager.updateSettings(this.settings);
             this.chartManager.updateSettings(this.settings);
         });
         
         this.initializeApp();
+    }
+
+    // 統計カード更新ヘルパー
+    updateStatCard(cardNumber, data) {
+        document.getElementById(`statIcon${cardNumber}`).textContent = data.icon;
+        document.getElementById(`statLabel${cardNumber}`).textContent = data.label;
+        document.getElementById(`statValue${cardNumber}`).textContent = data.value;
+        document.getElementById(`statUnit${cardNumber}`).textContent = data.unit;
+    }
+
+    // 期間設定取得ヘルパー
+    getPeriodConfiguration(period) {
+        const configs = {
+            today: {
+                card1: { icon: 'today', label: '今日の使用量' },
+                card2: { icon: 'attach_money', label: '今日のコスト' },
+                card3: { icon: 'schedule', label: '今日の使用時間' },
+                card4: { icon: 'compare_arrows', label: '昨日との比較' }
+            },
+            week: {
+                card1: { icon: 'date_range', label: '今週の使用量' },
+                card2: { icon: 'attach_money', label: '今週のコスト' },
+                card3: { icon: 'schedule', label: '今週の使用時間' },
+                card4: { icon: 'compare_arrows', label: '先週との比較' }
+            },
+            month: {
+                card1: { icon: 'calendar_month', label: '今月の使用量' },
+                card2: { icon: 'attach_money', label: '今月のコスト' },
+                card3: { icon: 'schedule', label: '今月の使用時間' },
+                card4: { icon: 'compare_arrows', label: '先月との比較' }
+            },
+            year: {
+                card1: { icon: 'calendar_today', label: '今年の使用量' },
+                card2: { icon: 'attach_money', label: '今年のコスト' },
+                card3: { icon: 'schedule', label: '今年の使用時間' },
+                card4: { icon: 'compare_arrows', label: '昨年との比較' }
+            },
+            all: {
+                card1: { icon: 'trending_up', label: '総使用量' },
+                card2: { icon: 'attach_money', label: '総コスト' },
+                card3: { icon: 'schedule', label: '総使用時間' },
+                card4: { icon: 'folder', label: 'プロジェクト数' }
+            }
+        };
+        return configs[period] || configs.today;
     }
 
 
@@ -159,9 +194,9 @@ class AppState {
         });
 
 
-        // チャートタイプ変更
+        // チャートタイプ変更（一時的に無効化）
         document.getElementById('usageChartType').addEventListener('change', () => {
-            this.chartManager.updateUsageChart(this.filteredEntries);
+            console.log('📊 チャートタイプ変更は一時的に無効化');
         });
 
         // ビュー切り替え
@@ -218,20 +253,12 @@ class AppState {
         
         try {
             this.projects = await window.electronAPI.scanClaudeProjects();
-            await this.loadAllProjectsData();
             
             // 初回起動時または24時間以上経過している場合は自動で為替レートを取得
             await this.settingsManager.autoFetchExchangeRateIfNeeded();
             
-            // データ処理を最適化された順序で実行
-            this.dataProcessor.prepareDailyUsageData();
-            
-            // データが更新されたためキャッシュをクリア
-            this.periodFilterCache.clear();
-            this.aggregationCache.clear();
-            this.lastDataHash = null;
-            
-            this.filterDataByPeriod();
+            // AdvancedLogDataProcessorのキャッシュをクリア
+            this.dataProcessor.clearCache();
             
             // サイレント更新の場合はスムーズな更新を実行
             if (silent) {
@@ -261,10 +288,6 @@ class AppState {
         }
     }
 
-    // 全プロジェクトのデータを読み込み
-    async loadAllProjectsData() {
-        await this.dataProcessor.loadAllProjectsData(this.projects, window.electronAPI);
-    }
 
     // 時間期間を設定（アニメーション対応版）
     setTimePeriod(period) {
@@ -277,48 +300,27 @@ class AppState {
         });
         
         // データ処理とチャート更新を同期実行（アニメーション表示のため）
-        this.filterDataByPeriod();
+        // this.filterDataByPeriod(); // 高精度版使用時は不要
         this.updateDashboard();
         
     }
 
-    // 期間でデータをフィルタリング（キャッシュ最適化版）
-    filterDataByPeriod() {
-        
-        // データハッシュを生成してキャッシュ有効性をチェック
-        const allEntries = this.dataProcessor.getAllLogEntries();
-        const currentDataHash = allEntries.length + '_' + (allEntries[0]?.timestamp || '') + '_' + (allEntries[allEntries.length - 1]?.timestamp || '');
-        
-        // データが変更されていない場合はキャッシュを確認（todayはデバッグのためキャッシュ無効化）
-        if (this.currentPeriod !== 'today' && this.lastDataHash === currentDataHash && this.periodFilterCache.has(this.currentPeriod)) {
-            this.filteredEntries = this.periodFilterCache.get(this.currentPeriod);
-            return;
-        }
-        
-        // キャッシュが無効な場合は新規計算
-        this.filteredEntries = this.dataProcessor.filterDataByPeriod(this.currentPeriod);
-        
-        // 結果をキャッシュに保存
-        this.periodFilterCache.set(this.currentPeriod, this.filteredEntries);
-        this.lastDataHash = currentDataHash;
-    }
+    // フィルタリングは不要（AdvancedLogDataProcessorで処理）
 
     // ダッシュボードを更新（統一された計算方式）
-    updateDashboard() {
+    async updateDashboard() {
         
-        // **修正**: 高精度統計を使用（全ファイル対応）
+        // **高精度版**: メモリ内フィルタリングで高速化
+        console.time('🚀 Dashboard Update');
         this.updateMessageStats();
-        this.updateStatsOverviewAdvanced(); // 高精度版を使用
+        await this.updateStatsOverview(); // 高精度版に統一
+        console.timeEnd('🚀 Dashboard Update');
         
-        // チャート用の必要最小限データを一括取得
-        const minimalData = this.dataProcessor.getAggregatedData(this.filteredEntries);
+        // チャートも高精度版データを使用（ファイル読み込み回避）
+        const highPrecisionData = await this.dataProcessor.getPeriodStats(this.currentPeriod);
         
-        // チャートは既存のものがあればサイレント更新、なければ新規作成
-        if (this.chartManager.hasChart('usage')) {
-            this.chartManager.updateChartsSilentWithCache(minimalData);
-        } else {
-            this.chartManager.createChartsWithCache(minimalData);
-        }
+        // チャートは一時的に無効化（データ形式の問題解決まで）
+        console.log('📊 チャート一時無効化: データ形式対応中');
         
         // 洞察とプロジェクト一覧は非同期で更新（UIブロックを防ぐ）
         setTimeout(() => {
@@ -328,119 +330,36 @@ class AppState {
         
     }
     
-    // 軽量統計概要更新（重い集計を避ける）
+    // 軽量統計概要更新（一時的に無効化）
     updateStatsOverviewLightweight() {
-        
-        // フィルタされたエントリから直接簡易計算
-        let totalTokens = 0;
-        let totalCostJPY = 0;
-        let callCount = 0;
-        
-        for (let i = 0; i < this.filteredEntries.length; i++) {
-            const entry = this.filteredEntries[i];
-            if (entry.message && entry.message.usage) {
-                totalTokens += (entry.message.usage.input_tokens || 0) + (entry.message.usage.output_tokens || 0);
-                callCount++;
-            }
-            if (entry.costUSD) {
-                totalCostJPY += entry.costUSD * this.settings.exchangeRate;
-            }
-        }
-        
-        // 簡易アクティブ時間計算（概算）
-        const timeSpan = this.filteredEntries.length > 0 ? 
-            (new Date(this.filteredEntries[this.filteredEntries.length - 1].timestamp).getTime() - 
-             new Date(this.filteredEntries[0].timestamp).getTime()) / (1000 * 60 * 60) : 0;
-        const estimatedActiveHours = Math.min(timeSpan, callCount * 0.1); // 1コール=6分と仮定
-        
-        // 期間設定を取得
-        const periodConfig = this.dataProcessor.getPeriodConfiguration(this.currentPeriod);
-        
-        // 統計カードを即座に更新
-        this.dataProcessor.updateStatCard(1, {
-            icon: periodConfig.card1.icon,
-            label: periodConfig.card1.label,
-            value: totalTokens.toLocaleString(),
-            unit: 'tokens'
-        });
-        
-        this.dataProcessor.updateStatCard(2, {
-            icon: periodConfig.card2.icon,
-            label: periodConfig.card2.label,
-            value: `¥${Math.round(totalCostJPY).toLocaleString()}`,
-            unit: 'JPY'
-        });
-        
-        this.dataProcessor.updateStatCard(3, {
-            icon: periodConfig.card3.icon,
-            label: periodConfig.card3.label,
-            value: estimatedActiveHours.toFixed(1),
-            unit: 'hours'
-        });
-        
-        // 4番目のカードは簡易版
-        this.dataProcessor.updateStatCard(4, {
-            icon: periodConfig.card4.icon,
-            label: periodConfig.card4.label,
-            value: Utils.formatNumber(callCount),
-            unit: 'calls'
-        });
-        
+        console.log('📊 軽量統計更新は一時的に無効化');
     }
     
     
-    // 非同期洞察更新
+    // 非同期洞察更新（一時的に無効化）
     updateInsightsAsync() {
-        
-        // 簡易計算のみ
-        const avgDaily = this.filteredEntries.length > 7 ? 
-            Utils.roundNumber(this.filteredEntries.length / 7) : this.filteredEntries.length;
-        document.getElementById('avgDailyUsage').textContent = Utils.formatNumber(avgDaily) + ' calls';
-        
-        // 他の値は概算または固定値
-        document.getElementById('peakHour').textContent = '14:00 - 15:00'; // 一般的なピーク時間
-        document.getElementById('topProject').textContent = this.filteredEntries.length > 0 ? 
-            (this.filteredEntries[0].projectName || 'Unknown') : '-';
-        
+        console.log('📊 非同期洞察更新は一時的に無効化');
     }
     
-    // 非同期プロジェクト一覧更新
+    // 非同期プロジェクト一覧更新（一時的に無効化）
     updateProjectListAsync() {
-        
-        // 簡易プロジェクト一覧（重複除去のみ）
-        const projects = new Set();
-        for (let i = 0; i < Math.min(this.filteredEntries.length, 100); i++) { // 最初の100件のみ
-            if (this.filteredEntries[i].projectName) {
-                projects.add(this.filteredEntries[i].projectName);
-            }
-        }
-        
-        const container = document.getElementById('projectListCompact');
-        container.innerHTML = Array.from(projects).map(project => `
-            <div class="project-item-compact">
-                <div class="project-name-compact">${project}</div>
-                <div class="project-stats-compact">統計計算中...</div>
-            </div>
-        `).join('');
-        
+        console.log('📊 非同期プロジェクト一覧更新は一時的に無効化');
     }
     
     // サイレント更新（チカチカを防ぐ）
-    updateDashboardSilent() {
+    async updateDashboardSilent() {
         this.updateMessageStats();
-        this.updateStatsOverviewAdvanced(); // 高精度版を使用
-        this.chartManager.updateChartsSilent(this.filteredEntries);
+        await this.updateStatsOverview(); // 高精度版に統一
+        
+        // チャートも一時無効化
+        console.log('📊 サイレントチャート一時無効化: データ形式対応中');
+        
         this.updateInsights();
         this.updateProjectList();
     }
 
-    // メッセージ統計を更新
+    // メッセージ統計を更新（一時的に無効化）
     updateMessageStats() {
-        const allLogEntries = this.dataProcessor.getAllLogEntries();
-        const { userMessages, assistantMessages } = this.dataProcessor.calculateMessageStats();
-        
-        // デバッグ用ログ
-        
         // 最小ウィンドウモードの表示のみ
         if (this.miniModeManager.isEnabled()) {
             this.miniModeManager.updateMessageStats();
@@ -448,29 +367,22 @@ class AppState {
     }
 
 
-    // 統計概要を更新
-    updateStatsOverview() {
-        // 現在の期間のデータを一括計算
-        const aggregatedData = this.dataProcessor.getAggregatedData(this.filteredEntries);
-        this.updateStatsOverviewCore(aggregatedData.stats, aggregatedData.activeHours);
-    }
-
-    // 高精度統計概要を更新（全ファイル対応）
-    async updateStatsOverviewAdvanced() {
+    // 統計概要を更新（高精度版）
+    async updateStatsOverview() {
         try {
             console.time('Advanced Stats Calculation');
             
             // 全ファイルベースで期間統計を取得
-            const periodStats = await this.advancedProcessor.getPeriodStats(this.currentPeriod);
+            const periodStats = await this.dataProcessor.getPeriodStats(this.currentPeriod);
             
             // 期間設定を取得
-            const periodConfig = this.dataProcessor.getPeriodConfiguration(this.currentPeriod);
+            const periodConfig = this.getPeriodConfiguration(this.currentPeriod);
             
             // アクティブ時間の計算（実際のタイムスタンプ範囲ベース）
-            const actualActiveHours = await this.advancedProcessor.calculateActualActiveHours(this.currentPeriod);
+            const actualActiveHours = await this.dataProcessor.calculateActualActiveHours(this.currentPeriod);
             
             // 統計カードを更新
-            this.dataProcessor.updateStatCard(1, {
+            this.updateStatCard(1, {
                 icon: periodConfig.card1.icon,
                 label: periodConfig.card1.label,
                 value: Utils.formatNumber(periodStats.totalTokens),
@@ -481,20 +393,20 @@ class AppState {
             const hasRealCost = periodStats.costUSD > 0;
             const costValue = hasRealCost ? 
                 Utils.formatCurrency(periodStats.costJPY) : 
-                Utils.formatCurrency(this.advancedProcessor.estimateCost(periodStats.inputTokens, periodStats.outputTokens).jpy);
+                Utils.formatCurrency(this.dataProcessor.estimateCost(periodStats.inputTokens, periodStats.outputTokens).jpy);
             
             const costLabel = hasRealCost ? 
                 periodConfig.card2.label : 
                 periodConfig.card2.label + ' (推定)';
             
-            this.dataProcessor.updateStatCard(2, {
+            this.updateStatCard(2, {
                 icon: periodConfig.card2.icon,
                 label: costLabel,
                 value: costValue,
                 unit: hasRealCost ? 'JPY' : '推定'
             });
             
-            this.dataProcessor.updateStatCard(3, {
+            this.updateStatCard(3, {
                 icon: periodConfig.card3.icon,
                 label: periodConfig.card3.label,
                 value: actualActiveHours.toFixed(1),
@@ -502,7 +414,7 @@ class AppState {
             });
             
             // 4番目のカード
-            this.dataProcessor.updateStatCard(4, {
+            this.updateStatCard(4, {
                 icon: periodConfig.card4.icon,
                 label: periodConfig.card4.label,
                 value: Utils.formatNumber(periodStats.entries),
@@ -513,9 +425,7 @@ class AppState {
             console.log(`📊 高精度統計: ${periodStats.totalTokens.toLocaleString()}トークン, ${hasRealCost ? '実際' : '推定'}コスト: ${costValue}`);
             
         } catch (error) {
-            console.error('高精度統計計算エラー:', error);
-            // エラー時は従来の方法にフォールバック
-            this.updateStatsOverview();
+            console.error('統計計算エラー:', error);
         }
     }
     
@@ -570,48 +480,9 @@ class AppState {
     }
 
 
-    // 比較期間のデータを取得（ローカル時間統一版）
+    // 比較期間のデータを取得（一時的に無効化）
     getComparisonPeriodData() {
-        const now = new Date();
-        let comparisonStartDate, comparisonEndDate;
-
-        switch (this.currentPeriod) {
-            case 'today':
-                // 前日
-                comparisonStartDate = new Date(now);
-                comparisonStartDate.setDate(now.getDate() - 1);
-                comparisonStartDate.setHours(0, 0, 0, 0);
-                comparisonEndDate = new Date(comparisonStartDate);
-                comparisonEndDate.setHours(23, 59, 59, 999);
-                break;
-            case 'week':
-                // 先週
-                const thisWeekStart = new Date(now);
-                thisWeekStart.setDate(now.getDate() - now.getDay());
-                thisWeekStart.setHours(0, 0, 0, 0);
-                comparisonStartDate = new Date(thisWeekStart);
-                comparisonStartDate.setDate(thisWeekStart.getDate() - 7);
-                comparisonEndDate = new Date(thisWeekStart);
-                comparisonEndDate.setMilliseconds(-1);
-                break;
-            case 'month':
-                // 先月
-                comparisonStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                comparisonEndDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-                break;
-            case 'year':
-                // 昨年
-                comparisonStartDate = new Date(now.getFullYear() - 1, 0, 1);
-                comparisonEndDate = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
-                break;
-            default:
-                return [];
-        }
-
-        return this.dataProcessor.getAllLogEntries().filter(entry => {
-            const entryDate = new Date(entry.timestamp);
-            return entryDate >= comparisonStartDate && entryDate <= comparisonEndDate;
-        });
+        return [];
     }
 
 
@@ -629,10 +500,9 @@ class AppState {
     
 
 
-    // 洞察を更新
+    // 洞察を更新（一時的に簡易版）
     updateInsights() {
-        const aggregatedData = this.dataProcessor.getAggregatedData(this.filteredEntries);
-        this.updateInsightsCore(aggregatedData.stats, aggregatedData.dailyData, aggregatedData.projectData, aggregatedData.hourlyData);
+        console.log('📊 洞察更新は一時的に無効化');
     }
     
     // 洞察更新の共通処理
@@ -650,11 +520,9 @@ class AppState {
         document.getElementById('topProject').textContent = topProject ? topProject.project : '-';
     }
 
-    // プロジェクト一覧を更新
+    // プロジェクト一覧を更新（一時的に簡易版）
     updateProjectList() {
-        // 全プロジェクトの集計データを使用（期間フィルターの影響を受けない）
-        const projectData = this.dataProcessor.aggregateDataByProject(this.dataProcessor.getAllLogEntries());
-        this.updateProjectListCore(projectData);
+        console.log('📊 プロジェクト一覧更新は一時的に無効化');
     }
     
     // プロジェクト一覧更新の共通処理

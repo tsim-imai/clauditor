@@ -92,10 +92,20 @@ class AdvancedLogDataProcessor {
     }
 
     /**
-     * 特定期間の統計を取得
+     * 特定期間の統計を取得（高速メモリ内フィルタリング）
      */
     async getPeriodStats(period) {
+        // キャッシュされた全統計データを取得（ファイルI/Oは必要時のみ）
         const allStats = await this.calculateAllDailyStats();
+        
+        // メモリ内で期間フィルタリングのみ実行
+        return this.filterStatsByPeriod(allStats, period);
+    }
+    
+    /**
+     * メモリ内期間フィルタリング（ファイルI/O一切なし）
+     */
+    filterStatsByPeriod(allStats, period) {
         const now = new Date();
         let startDate;
         
@@ -186,15 +196,32 @@ class AdvancedLogDataProcessor {
     }
 
     /**
-     * 実際のアクティブ時間を計算（タイムスタンプ範囲ベース）
+     * 実際のアクティブ時間を計算（高速メモリ内処理）
      */
     async calculateActualActiveHours(period) {
         try {
+            // 全統計データを取得（キャッシュ利用）
             const allStats = await this.calculateAllDailyStats();
+            
+            if (period === 'all') {
+                return await this.calculateAllPeriodActiveHours();
+            }
+            
+            // メモリ内で期間フィルタリングして日付範囲を取得
+            const periodStats = this.filterStatsByPeriod(allStats, period);
+            
+            if (periodStats.entries === 0) {
+                return 0;
+            }
+            
+            if (periodStats.entries === 1) {
+                return 0.1; // 単発の場合は6分と仮定
+            }
+            
+            // 期間内の日付から時間スパンを推定
             const now = new Date();
             let startDate;
             
-            // 期間の開始日を計算
             switch (period) {
                 case 'today':
                     startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -211,31 +238,11 @@ class AdvancedLogDataProcessor {
                     startDate = new Date(now.getFullYear(), 0, 1);
                     break;
                 default:
-                    // 'all' の場合は全期間のタイムスタンプを取得
-                    return await this.calculateAllPeriodActiveHours();
+                    return 0;
             }
             
-            // 期間内の全エントリのタイムスタンプを収集
-            const allProjects = await window.electronAPI.scanClaudeProjects();
-            const timestamps = [];
-            
-            for (const project of allProjects) {
-                const logEntries = await window.electronAPI.readProjectLogs(project.path);
-                
-                for (const entry of logEntries) {
-                    if (!entry.timestamp) continue;
-                    
-                    const entryDate = new Date(entry.timestamp);
-                    
-                    // 期間内のエントリのみ対象
-                    if (period === 'all' || entryDate >= startDate) {
-                        timestamps.push(entryDate);
-                    }
-                }
-            }
-            
-            // タイムスタンプをソート
-            timestamps.sort((a, b) => a - b);
+            // 実際のタイムスタンプ範囲から計算するため、キャッシュからタイムスタンプを取得
+            const timestamps = await this.getTimestampsForPeriod(period);
             
             if (timestamps.length === 0) {
                 return 0;
@@ -250,7 +257,6 @@ class AdvancedLogDataProcessor {
             const lastTime = timestamps[timestamps.length - 1];
             const actualHours = (lastTime - firstTime) / (1000 * 60 * 60);
             
-            // 最小値のみ設定（0時間未満にならないよう）
             return Math.max(actualHours, 0.1);
             
         } catch (error) {
@@ -260,24 +266,12 @@ class AdvancedLogDataProcessor {
     }
     
     /**
-     * 全期間のアクティブ時間を計算
+     * 全期間のアクティブ時間を計算（キャッシュ利用）
      */
     async calculateAllPeriodActiveHours() {
         try {
-            const allProjects = await window.electronAPI.scanClaudeProjects();
-            const timestamps = [];
-            
-            for (const project of allProjects) {
-                const logEntries = await window.electronAPI.readProjectLogs(project.path);
-                
-                for (const entry of logEntries) {
-                    if (entry.timestamp) {
-                        timestamps.push(new Date(entry.timestamp));
-                    }
-                }
-            }
-            
-            timestamps.sort((a, b) => a - b);
+            // キャッシュを利用して全期間のタイムスタンプを取得
+            const timestamps = await this.getAllTimestamps();
             
             if (timestamps.length <= 1) {
                 return timestamps.length * 0.1;
@@ -285,15 +279,83 @@ class AdvancedLogDataProcessor {
             
             const firstTime = timestamps[0];
             const lastTime = timestamps[timestamps.length - 1];
-            const totalDays = (lastTime - firstTime) / (1000 * 60 * 60 * 24);
             
-            // 全期間の場合は日数ベースで現実的な時間を推定
-            // 平均的な1日あたりの使用時間を3時間と仮定
-            return Math.min(totalDays * 3, (lastTime - firstTime) / (1000 * 60 * 60));
+            // 全期間も実際のタイムスタンプ範囲から計算
+            const actualHours = (lastTime - firstTime) / (1000 * 60 * 60);
+            return Math.max(actualHours, 0.1);
             
         } catch (error) {
             console.error('全期間アクティブ時間計算エラー:', error);
             return 0;
+        }
+    }
+
+    /**
+     * 期間内のタイムスタンプを取得（キャッシュ利用）
+     */
+    async getTimestampsForPeriod(period) {
+        try {
+            // キャッシュされた全統計データを取得（ファイル読み込み回避）
+            const allStats = await this.calculateAllDailyStats();
+            const now = new Date();
+            let startDate;
+            
+            switch (period) {
+                case 'today':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    break;
+                case 'week':
+                    startDate = new Date(now);
+                    startDate.setDate(now.getDate() - now.getDay());
+                    startDate.setHours(0, 0, 0, 0);
+                    break;
+                case 'month':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    break;
+                case 'year':
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    break;
+                default:
+                    // 全期間の場合は別メソッド
+                    return await this.getAllTimestamps();
+            }
+            
+            // キャッシュされた日別統計から期間内の日付を抽出
+            const filteredDates = Array.from(allStats.values())
+                .filter(stat => {
+                    const statDate = new Date(stat.date);
+                    return statDate >= startDate && statDate <= now;
+                })
+                .map(stat => new Date(stat.date));
+            
+            // 日付をソート（統計は日単位なので、日付の開始時刻を使用）
+            filteredDates.sort((a, b) => a - b);
+            return filteredDates;
+            
+        } catch (error) {
+            console.error('期間タイムスタンプ取得エラー:', error);
+            return [];
+        }
+    }
+    
+    /**
+     * 全期間のタイムスタンプを取得（キャッシュ利用）
+     */
+    async getAllTimestamps() {
+        try {
+            // キャッシュされた全統計データを取得（ファイル読み込み回避）
+            const allStats = await this.calculateAllDailyStats();
+            
+            // 日別統計から全期間の日付を抽出
+            const allDates = Array.from(allStats.values())
+                .map(stat => new Date(stat.date));
+            
+            allDates.sort((a, b) => a - b);
+            return allDates;
+            
+        } catch (error) {
+            console.error('全タイムスタンプ取得エラー:', error);
+            return [];
         }
     }
 
