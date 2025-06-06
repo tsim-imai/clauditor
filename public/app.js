@@ -340,9 +340,9 @@ class AppState {
     }
     
     
-    // 非同期洞察更新（一時的に無効化）
+    // 非同期洞察更新
     updateInsightsAsync() {
-        console.log('📊 非同期洞察更新は一時的に無効化');
+        this.updateInsights();
     }
     
     
@@ -500,9 +500,22 @@ class AppState {
     
 
 
-    // 洞察を更新（一時的に簡易版）
-    updateInsights() {
-        console.log('📊 洞察更新は一時的に無効化');
+    // 洞察を更新
+    async updateInsights() {
+        try {
+            const chartData = await this.dataProcessor.getChartCompatibleData(this.currentPeriod);
+            
+            // 平均日使用量
+            const avgDaily = chartData.dailyData.length > 0 ? 
+                Utils.roundNumber(chartData.stats.totalTokens / chartData.dailyData.length) : 0;
+            document.getElementById('avgDailyUsage').textContent = Utils.formatNumber(avgDaily) + ' tokens';
+
+            // 最も活発な時間
+            const peakHour = chartData.hourlyData.indexOf(Math.max(...chartData.hourlyData));
+            document.getElementById('peakHour').textContent = `${peakHour}:00 - ${peakHour + 1}:00`;
+        } catch (error) {
+            console.error('洞察更新エラー:', error);
+        }
     }
     
     // 洞察更新の共通処理
