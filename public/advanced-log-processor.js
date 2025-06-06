@@ -152,7 +152,9 @@ class AdvancedLogDataProcessor {
      * 統計データを集計
      */
     aggregateStats(statsArray) {
-        return statsArray.reduce((acc, stat) => {
+        console.log('🧮 統計集計開始:', { statsArrayLength: statsArray.length });
+        
+        const result = statsArray.reduce((acc, stat) => {
             acc.totalTokens += stat.inputTokens + stat.outputTokens;
             acc.inputTokens += stat.inputTokens;
             acc.outputTokens += stat.outputTokens;
@@ -168,6 +170,9 @@ class AdvancedLogDataProcessor {
             costJPY: 0,
             entries: 0
         });
+        
+        console.log('🧮 統計集計完了:', result);
+        return result;
     }
 
     /**
@@ -454,18 +459,36 @@ class AdvancedLogDataProcessor {
                 weeklyData.unshift({ days: previousWeekDays });
             }
             
+            const activeHours = await this.calculateActualActiveHours(period);
+            
+            // デバッグ情報を出力
+            console.log('🚀 ChartManager互換データ生成完了:', {
+                period,
+                periodStats,
+                activeHours,
+                dailyDataLength: dailyData.length,
+                hourlyDataLength: hourlyData.length
+            });
+            
             return {
                 stats: periodStats,
                 dailyData: dailyData,
                 hourlyData: hourlyData,
                 weeklyData: weeklyData,
-                activeHours: await this.calculateActualActiveHours(period)
+                activeHours: activeHours
             };
             
         } catch (error) {
             console.error('ChartManager互換データ生成エラー:', error);
             return {
-                stats: { totalTokens: 0, costJPY: 0, entries: 0 },
+                stats: { 
+                    totalTokens: 0, 
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    costUSD: 0,
+                    costJPY: 0, 
+                    entries: 0 
+                },
                 dailyData: [],
                 hourlyData: new Array(24).fill(0),
                 weeklyData: [],

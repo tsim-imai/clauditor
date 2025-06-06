@@ -235,7 +235,7 @@ class AppState {
         
         this.refreshDebounceTimer = setTimeout(() => {
             this.refreshData(true); // サイレント更新
-        }, 2000); // 2秒待ってから更新
+        }, 5000); // 5秒待ってから更新
     }
 
     // データを更新（パフォーマンス最適化版）
@@ -261,11 +261,14 @@ class AppState {
             // AdvancedLogDataProcessorのキャッシュをクリア
             this.dataProcessor.clearCache();
             
+            // チャートデータを一括取得（重複を避ける）
+            const chartData = await this.dataProcessor.getChartCompatibleData(this.currentPeriod);
+            
             // サイレント更新の場合はスムーズな更新を実行
             if (silent) {
-                this.updateDashboardSilent();
+                this.updateDashboardSilentWithData(chartData);
             } else {
-                this.updateDashboard();
+                this.updateDashboardWithData(chartData);
             }
             
             if (this.currentView === 'calendar') {
@@ -310,15 +313,18 @@ class AppState {
 
     // ダッシュボードを更新（統一された計算方式）
     async updateDashboard() {
-        
+        // 内部でデータ取得して更新
+        const chartData = await this.dataProcessor.getChartCompatibleData(this.currentPeriod);
+        this.updateDashboardWithData(chartData);
+    }
+    
+    // ダッシュボードを事前取得データで更新（重複処理を回避）
+    async updateDashboardWithData(chartData) {
         // **高精度版**: メモリ内フィルタリングで高速化
         console.time('🚀 Dashboard Update');
         this.updateMessageStats();
-        await this.updateStatsOverview(); // 高精度版に統一
+        await this.updateStatsOverviewWithData(chartData); // 事前取得データを使用
         console.timeEnd('🚀 Dashboard Update');
-        
-        // チャート用の高精度互換データを取得
-        const chartData = await this.dataProcessor.getChartCompatibleData(this.currentPeriod);
         
         // チャートは既存のものがあればサイレント更新、なければ新規作成
         if (this.chartManager.hasChart('usage')) {
@@ -329,9 +335,8 @@ class AppState {
         
         // 洞察は非同期で更新（UIブロックを防ぐ）
         setTimeout(() => {
-            this.updateInsightsAsync();
+            this.updateInsightsAsyncWithData(chartData);
         }, 0);
-        
     }
     
     // 軽量統計概要更新（一時的に無効化）
@@ -348,14 +353,19 @@ class AppState {
     
     // サイレント更新（チカチカを防ぐ）
     async updateDashboardSilent() {
-        this.updateMessageStats();
-        await this.updateStatsOverview(); // 高精度版に統一
-        
-        // チャートも高精度互換データを使用
+        // 内部でデータ取得して更新
         const chartData = await this.dataProcessor.getChartCompatibleData(this.currentPeriod);
+        this.updateDashboardSilentWithData(chartData);
+    }
+    
+    // サイレント更新を事前取得データで実行（重複処理を回避）
+    async updateDashboardSilentWithData(chartData) {
+        this.updateMessageStats();
+        await this.updateStatsOverviewWithData(chartData); // 事前取得データを使用
+        
         this.chartManager.updateChartsSilent(chartData);
         
-        this.updateInsights();
+        this.updateInsightsWithData(chartData);
     }
 
     // メッセージ統計を更新（一時的に無効化）
@@ -426,6 +436,139 @@ class AppState {
             
         } catch (error) {
             console.error('統計計算エラー:', error);
+        }
+    }
+    
+    // 統計概要を事前取得データで更新（重複処理を回避）
+    async updateStatsOverviewWithData(chartData) {
+        try {
+            console.time('Advanced Stats Calculation');
+            
+            // chartDataの検証
+            if (!chartData || !chartData.stats) {
+                console.warn('⚠️ chartDataまたはstatsが未定義です:', chartData);
+                // デフォルトデータで統計表示
+                this.updateStatsDisplay({
+                    totalTokens: 0,
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    costUSD: 0,
+                    costJPY: 0,
+                    entries: 0
+                }, 0);
+                return;
+            }
+            
+            // chartDataから期間統計を抽出（フィールド名を正しくマッピング）
+            const periodStats = {
+                totalTokens: chartData.stats.totalTokens || 0,
+                inputTokens: chartData.stats.inputTokens || 0,
+                outputTokens: chartData.stats.outputTokens || 0,
+                costUSD: chartData.stats.costUSD || 0,
+                costJPY: chartData.stats.costJPY || 0,
+                entries: chartData.stats.entries || 0
+            };
+            
+            // activeHoursを正しく取得（chartDataの直接プロパティとして渡される）
+            const activeHours = chartData.activeHours || 0;
+            
+            console.log('📊 updateStatsOverviewWithData受信データ:', {
+                chartData: {
+                    stats: chartData.stats,
+                    activeHours: chartData.activeHours
+                },
+                extractedStats: periodStats,
+                extractedActiveHours: activeHours
+            });
+            
+            this.updateStatsDisplay(periodStats, activeHours);
+        } catch (error) {
+            console.error('統計更新エラー:', error);
+            // エラー時もデフォルト値で表示
+            this.updateStatsDisplay({
+                totalTokens: 0,
+                inputTokens: 0,
+                outputTokens: 0,
+                costUSD: 0,
+                costJPY: 0,
+                entries: 0
+            }, 0);
+        }
+    }
+    
+    // 統計表示の共通処理
+    updateStatsDisplay(periodStats, preCalculatedActiveHours = null) {
+        try {
+            // デバッグ情報を出力
+            console.log('📊 統計表示データ:', {
+                periodStats,
+                preCalculatedActiveHours,
+                currentPeriod: this.currentPeriod
+            });
+            
+            // 期間設定を取得
+            const periodConfig = this.getPeriodConfiguration(this.currentPeriod);
+            
+            // 統計データの検証とfallback
+            const safeStats = {
+                totalTokens: periodStats.totalTokens || 0,
+                inputTokens: periodStats.inputTokens || 0,
+                outputTokens: periodStats.outputTokens || 0,
+                costUSD: periodStats.costUSD || 0,
+                costJPY: periodStats.costJPY || 0,
+                entries: periodStats.entries || 0
+            };
+            
+            // アクティブ時間の計算
+            const actualActiveHours = preCalculatedActiveHours !== null && preCalculatedActiveHours !== undefined ? 
+                preCalculatedActiveHours : 
+                0; // fallback
+            
+            // 統計カードを更新
+            this.updateStatCard(1, {
+                icon: periodConfig.card1.icon,
+                label: periodConfig.card1.label,
+                value: Utils.formatNumber(safeStats.totalTokens),
+                unit: 'tokens'
+            });
+            
+            // コストデータの表示判定
+            const hasRealCost = safeStats.costUSD > 0;
+            const costValue = hasRealCost ? 
+                Utils.formatCurrency(safeStats.costJPY) : 
+                Utils.formatCurrency(this.dataProcessor.estimateCost(safeStats.inputTokens, safeStats.outputTokens).jpy);
+            
+            const costLabel = hasRealCost ? 
+                periodConfig.card2.label : 
+                periodConfig.card2.label + ' (推定)';
+            
+            this.updateStatCard(2, {
+                icon: periodConfig.card2.icon,
+                label: costLabel,
+                value: costValue,
+                unit: hasRealCost ? 'JPY' : '推定'
+            });
+            
+            this.updateStatCard(3, {
+                icon: periodConfig.card3.icon,
+                label: periodConfig.card3.label,
+                value: actualActiveHours.toFixed(1),
+                unit: 'hours'
+            });
+            
+            // 4番目のカード
+            this.updateStatCard(4, {
+                icon: periodConfig.card4.icon,
+                label: periodConfig.card4.label,
+                value: Utils.formatNumber(safeStats.entries),
+                unit: 'entries'
+            });
+            
+            console.timeEnd('Advanced Stats Calculation');
+            console.log(`📊 高精度統計: ${safeStats.totalTokens.toLocaleString()}トークン, ${hasRealCost ? '実際' : '推定'}コスト: ${costValue}, アクティブ時間: ${actualActiveHours}h`);
+            
+        } catch (error) {
+            console.error('統計表示エラー:', error);
         }
     }
     
@@ -504,7 +647,15 @@ class AppState {
     async updateInsights() {
         try {
             const chartData = await this.dataProcessor.getChartCompatibleData(this.currentPeriod);
-            
+            this.updateInsightsWithData(chartData);
+        } catch (error) {
+            console.error('洞察更新エラー:', error);
+        }
+    }
+    
+    // 洞察を事前取得データで更新（重複処理を回避）
+    updateInsightsWithData(chartData) {
+        try {
             // 平均日使用量
             const avgDaily = chartData.dailyData.length > 0 ? 
                 Utils.roundNumber(chartData.stats.totalTokens / chartData.dailyData.length) : 0;
@@ -516,6 +667,11 @@ class AppState {
         } catch (error) {
             console.error('洞察更新エラー:', error);
         }
+    }
+    
+    // 非同期洞察更新（事前取得データ版）
+    updateInsightsAsyncWithData(chartData) {
+        this.updateInsightsWithData(chartData);
     }
     
     // 洞察更新の共通処理
