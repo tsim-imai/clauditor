@@ -43,10 +43,10 @@ class ChartManager {
      */
     updateChartsSilentWithCache(aggregatedData) {
         console.time('updateChartsSilent');
-        this.updateUsageChartSilentWithCache(aggregatedData.dailyData);
-        this.updateHourlyChartSilentWithCache(aggregatedData.hourlyData);
-        this.updateProjectChartSilentWithCache(aggregatedData.projectData);
-        this.updateWeeklyChartSilentWithCache(aggregatedData.weeklyData);
+        this.updateUsageChartSilentWithCache(aggregatedData);
+        this.updateHourlyChartSilentWithCache(aggregatedData);
+        this.updateProjectChartSilentWithCache(aggregatedData);
+        this.updateWeeklyChartSilentWithCache(aggregatedData);
         console.timeEnd('updateChartsSilent');
     }
     
@@ -55,28 +55,29 @@ class ChartManager {
      */
     createChartsWithCache(aggregatedData) {
         console.time('createCharts');
-        this.createUsageChartWithCache(aggregatedData.dailyData);
-        this.createHourlyChartWithCache(aggregatedData.hourlyData);
-        this.createProjectChartWithCache(aggregatedData.projectData);
-        this.createWeeklyChartWithCache(aggregatedData.weeklyData);
+        this.createUsageChartWithCache(aggregatedData);
+        this.createHourlyChartWithCache(aggregatedData);
+        this.createProjectChartWithCache(aggregatedData);
+        this.createWeeklyChartWithCache(aggregatedData);
         console.timeEnd('createCharts');
     }
     
     /**
      * 簡易版キャッシュ対応チャート更新（実装を簡略化）
      */
-    updateUsageChartSilentWithCache(dailyData) {
+    updateUsageChartSilentWithCache(chartData) {
         if (!this.charts.usage) return;
+        const dailyData = chartData.dailyData;
         const chartType = document.getElementById('usageChartType').value;
         let data, label, color;
         switch (chartType) {
             case 'tokens':
-                data = dailyData.map(d => d.totalTokens);
+                data = dailyData.map(d => d.tokens);
                 label = 'トークン数';
                 color = '#3b82f6';
                 break;
             case 'cost':
-                data = dailyData.map(d => d.costJPY);
+                data = dailyData.map(d => d.cost);
                 label = 'コスト (¥)';
                 color = '#10b981';
                 break;
@@ -94,14 +95,15 @@ class ChartManager {
         this.charts.usage.update('active'); // 標準的な滑らかアニメーション
     }
     
-    updateHourlyChartSilentWithCache(hourlyData) {
+    updateHourlyChartSilentWithCache(chartData) {
         if (!this.charts.hourly) return;
-        this.charts.hourly.data.datasets[0].data = hourlyData;
+        this.charts.hourly.data.datasets[0].data = chartData.hourlyData;
         this.charts.hourly.update('active'); // 標準的な滑らかアニメーション
     }
     
-    updateProjectChartSilentWithCache(projectData) {
+    updateProjectChartSilentWithCache(chartData) {
         if (!this.charts.project) return;
+        const projectData = chartData.projectData;
         const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'];
         this.charts.project.data.labels = projectData.map(d => d.project);
         this.charts.project.data.datasets[0].data = projectData.map(d => d.totalTokens);
@@ -109,45 +111,47 @@ class ChartManager {
         this.charts.project.update('active'); // 標準的な滑らかアニメーション
     }
     
-    updateWeeklyChartSilentWithCache(weeklyData) {
+    updateWeeklyChartSilentWithCache(chartData) {
         if (!this.charts.weekly) return;
+        const weeklyData = chartData.weeklyData;
         const currentWeek = weeklyData[weeklyData.length - 1];
         const previousWeek = weeklyData[weeklyData.length - 2];
-        this.charts.weekly.data.datasets[0].data = currentWeek ? currentWeek.dailyTokens : new Array(7).fill(0);
-        this.charts.weekly.data.datasets[1].data = previousWeek ? previousWeek.dailyTokens : new Array(7).fill(0);
+        this.charts.weekly.data.datasets[0].data = currentWeek ? currentWeek.days : new Array(7).fill(0);
+        this.charts.weekly.data.datasets[1].data = previousWeek ? previousWeek.days : new Array(7).fill(0);
         this.charts.weekly.update('active'); // 標準的な滑らかアニメーション
     }
     
     /**
      * 簡易版キャッシュ対応チャート作成（フォールバック）
      */
-    createUsageChartWithCache(dailyData) { this.createUsageChart(); }
-    createHourlyChartWithCache(hourlyData) { this.createHourlyChart(); }
-    createProjectChartWithCache(projectData) { this.createProjectChart(); }
-    createWeeklyChartWithCache(weeklyData) { this.createWeeklyChart(); }
+    createUsageChartWithCache(chartData) { this.createUsageChart(chartData); }
+    createHourlyChartWithCache(chartData) { this.createHourlyChart(chartData); }
+    createProjectChartWithCache(chartData) { this.createProjectChart(chartData); }
+    createWeeklyChartWithCache(chartData) { this.createWeeklyChart(chartData); }
 
     /**
      * 使用量推移チャート
      */
-    createUsageChart(filteredEntries = null) {
+    createUsageChart(chartData = null) {
         const ctx = document.getElementById('usageChart').getContext('2d');
         
         if (this.charts.usage) {
             this.charts.usage.destroy();
         }
 
-        const dailyData = this.dataProcessor.aggregateDataByDay(filteredEntries || []);
+        // 高精度データを使用
+        const dailyData = chartData.dailyData;
         const chartType = document.getElementById('usageChartType').value;
 
         let data, label, color;
         switch (chartType) {
             case 'tokens':
-                data = dailyData.map(d => d.totalTokens);
+                data = dailyData.map(d => d.tokens);
                 label = 'トークン数';
                 color = '#3b82f6';
                 break;
             case 'cost':
-                data = dailyData.map(d => d.costJPY);
+                data = dailyData.map(d => d.cost);
                 label = 'コスト (¥)';
                 color = '#10b981';
                 break;
@@ -215,18 +219,18 @@ class ChartManager {
             return;
         }
         
-        const dailyData = this.dataProcessor.aggregateDataByDay(filteredEntries);
+        const dailyData = filteredEntries.dailyData;
         const chartType = document.getElementById('usageChartType').value;
         
         let data, label, color;
         switch (chartType) {
             case 'tokens':
-                data = dailyData.map(d => d.totalTokens);
+                data = dailyData.map(d => d.tokens);
                 label = 'トークン数';
                 color = '#3b82f6';
                 break;
             case 'cost':
-                data = dailyData.map(d => d.costJPY);
+                data = dailyData.map(d => d.cost);
                 label = 'コスト (¥)';
                 color = '#10b981';
                 break;
@@ -256,7 +260,7 @@ class ChartManager {
             this.charts.hourly.destroy();
         }
 
-        const hourlyData = this.dataProcessor.aggregateDataByHour(filteredEntries || []);
+        const hourlyData = filteredEntries.hourlyData;
 
         this.charts.hourly = new Chart(ctx, {
             type: 'bar',
@@ -314,7 +318,7 @@ class ChartManager {
             return;
         }
         
-        const hourlyData = this.dataProcessor.aggregateDataByHour(filteredEntries);
+        const hourlyData = filteredEntries.hourlyData;
         
         // データを更新（チャートを再作成せず）
         this.charts.hourly.data.datasets[0].data = hourlyData;
@@ -331,7 +335,7 @@ class ChartManager {
             this.charts.project.destroy();
         }
 
-        const projectData = this.dataProcessor.aggregateDataByProject(filteredEntries || []);
+        const projectData = filteredEntries.projectData;
         const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'];
 
         this.charts.project = new Chart(ctx, {
@@ -375,7 +379,7 @@ class ChartManager {
             return;
         }
         
-        const projectData = this.dataProcessor.aggregateDataByProject(filteredEntries);
+        const projectData = filteredEntries.projectData;
         const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'];
         
         // データを更新（チャートを再作成せず）
@@ -395,7 +399,7 @@ class ChartManager {
             this.charts.weekly.destroy();
         }
 
-        const weeklyData = this.dataProcessor.aggregateDataByWeek(filteredEntries || []);
+        const weeklyData = filteredEntries.weeklyData;
         const currentWeek = weeklyData[weeklyData.length - 1];
         const previousWeek = weeklyData[weeklyData.length - 2];
 
@@ -468,7 +472,7 @@ class ChartManager {
             return;
         }
         
-        const weeklyData = this.dataProcessor.aggregateDataByWeek(filteredEntries);
+        const weeklyData = filteredEntries.weeklyData;
         const currentWeek = weeklyData[weeklyData.length - 1];
         const previousWeek = weeklyData[weeklyData.length - 2];
         

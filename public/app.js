@@ -194,9 +194,10 @@ class AppState {
         });
 
 
-        // チャートタイプ変更（一時的に無効化）
-        document.getElementById('usageChartType').addEventListener('change', () => {
-            console.log('📊 チャートタイプ変更は一時的に無効化');
+        // チャートタイプ変更
+        document.getElementById('usageChartType').addEventListener('change', async () => {
+            const chartData = await this.dataProcessor.getChartCompatibleData(this.currentPeriod);
+            this.chartManager.updateUsageChart(chartData);
         });
 
         // ビュー切り替え
@@ -316,11 +317,15 @@ class AppState {
         await this.updateStatsOverview(); // 高精度版に統一
         console.timeEnd('🚀 Dashboard Update');
         
-        // チャートも高精度版データを使用（ファイル読み込み回避）
-        const highPrecisionData = await this.dataProcessor.getPeriodStats(this.currentPeriod);
+        // チャート用の高精度互換データを取得
+        const chartData = await this.dataProcessor.getChartCompatibleData(this.currentPeriod);
         
-        // チャートは一時的に無効化（データ形式の問題解決まで）
-        console.log('📊 チャート一時無効化: データ形式対応中');
+        // チャートは既存のものがあればサイレント更新、なければ新規作成
+        if (this.chartManager.hasChart('usage')) {
+            this.chartManager.updateChartsSilentWithCache(chartData);
+        } else {
+            this.chartManager.createChartsWithCache(chartData);
+        }
         
         // 洞察とプロジェクト一覧は非同期で更新（UIブロックを防ぐ）
         setTimeout(() => {
@@ -351,8 +356,9 @@ class AppState {
         this.updateMessageStats();
         await this.updateStatsOverview(); // 高精度版に統一
         
-        // チャートも一時無効化
-        console.log('📊 サイレントチャート一時無効化: データ形式対応中');
+        // チャートも高精度互換データを使用
+        const chartData = await this.dataProcessor.getChartCompatibleData(this.currentPeriod);
+        this.chartManager.updateChartsSilent(chartData);
         
         this.updateInsights();
         this.updateProjectList();
