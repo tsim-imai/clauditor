@@ -18,6 +18,9 @@ class AppState {
         // LogDataProcessorインスタンスを作成
         this.dataProcessor = new LogDataProcessor(this.settings);
         
+        // AdvancedLogDataProcessorインスタンスを作成（全ファイル対応）
+        this.advancedProcessor = new AdvancedLogDataProcessor(this.settings);
+        
         // MiniModeManagerインスタンスを作成
         this.miniModeManager = new MiniModeManager(this.dataProcessor, this.settings);
         
@@ -35,6 +38,7 @@ class AppState {
         this.settingsManager.setOnSettingsChange((newSettings) => {
             this.settings = newSettings;
             this.dataProcessor.updateSettings(this.settings);
+            this.advancedProcessor.exchangeRate = this.settings.exchangeRate;
             this.miniModeManager.updateSettings(this.settings);
             this.calendarManager.updateSettings(this.settings);
             this.chartManager.updateSettings(this.settings);
@@ -302,9 +306,9 @@ class AppState {
     // ダッシュボードを更新（統一された計算方式）
     updateDashboard() {
         
-        // **修正**: 手動・自動更新で同じ計算方式を使用
+        // **修正**: 高精度統計を使用（全ファイル対応）
         this.updateMessageStats();
-        this.updateStatsOverview(); // 軽量版ではなく正確版を使用
+        this.updateStatsOverviewAdvanced(); // 高精度版を使用
         
         // チャート用の必要最小限データを一括取得
         const minimalData = this.dataProcessor.getAggregatedData(this.filteredEntries);
@@ -424,7 +428,7 @@ class AppState {
     // サイレント更新（チカチカを防ぐ）
     updateDashboardSilent() {
         this.updateMessageStats();
-        this.updateStatsOverview();
+        this.updateStatsOverviewAdvanced(); // 高精度版を使用
         this.chartManager.updateChartsSilent(this.filteredEntries);
         this.updateInsights();
         this.updateProjectList();
@@ -449,6 +453,70 @@ class AppState {
         // 現在の期間のデータを一括計算
         const aggregatedData = this.dataProcessor.getAggregatedData(this.filteredEntries);
         this.updateStatsOverviewCore(aggregatedData.stats, aggregatedData.activeHours);
+    }
+
+    // 高精度統計概要を更新（全ファイル対応）
+    async updateStatsOverviewAdvanced() {
+        try {
+            console.time('Advanced Stats Calculation');
+            
+            // 全ファイルベースで期間統計を取得
+            const periodStats = await this.advancedProcessor.getPeriodStats(this.currentPeriod);
+            
+            // 期間設定を取得
+            const periodConfig = this.dataProcessor.getPeriodConfiguration(this.currentPeriod);
+            
+            // アクティブ時間の概算（トークン数ベース）
+            const estimatedActiveHours = Math.min(periodStats.entries * 0.1, 24); // 1エントリ=6分と仮定、最大24時間
+            
+            // 統計カードを更新
+            this.dataProcessor.updateStatCard(1, {
+                icon: periodConfig.card1.icon,
+                label: periodConfig.card1.label,
+                value: Utils.formatNumber(periodStats.totalTokens),
+                unit: 'tokens'
+            });
+            
+            // コストデータの表示判定
+            const hasRealCost = periodStats.costUSD > 0;
+            const costValue = hasRealCost ? 
+                Utils.formatCurrency(periodStats.costJPY) : 
+                Utils.formatCurrency(this.advancedProcessor.estimateCost(periodStats.inputTokens, periodStats.outputTokens).jpy);
+            
+            const costLabel = hasRealCost ? 
+                periodConfig.card2.label : 
+                periodConfig.card2.label + ' (推定)';
+            
+            this.dataProcessor.updateStatCard(2, {
+                icon: periodConfig.card2.icon,
+                label: costLabel,
+                value: costValue,
+                unit: hasRealCost ? 'JPY' : '推定'
+            });
+            
+            this.dataProcessor.updateStatCard(3, {
+                icon: periodConfig.card3.icon,
+                label: periodConfig.card3.label,
+                value: estimatedActiveHours.toFixed(1),
+                unit: 'hours'
+            });
+            
+            // 4番目のカード
+            this.dataProcessor.updateStatCard(4, {
+                icon: periodConfig.card4.icon,
+                label: periodConfig.card4.label,
+                value: Utils.formatNumber(periodStats.entries),
+                unit: 'entries'
+            });
+            
+            console.timeEnd('Advanced Stats Calculation');
+            console.log(`📊 高精度統計: ${periodStats.totalTokens:,}トークン, ${hasRealCost ? '実際' : '推定'}コスト: ${costValue}`);
+            
+        } catch (error) {
+            console.error('高精度統計計算エラー:', error);
+            // エラー時は従来の方法にフォールバック
+            this.updateStatsOverview();
+        }
     }
     
     // 統計概要更新の共通処理
