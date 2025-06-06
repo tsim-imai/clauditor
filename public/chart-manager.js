@@ -24,7 +24,6 @@ class ChartManager {
     createCharts(filteredEntries) {
         this.createUsageChart(filteredEntries);
         this.createHourlyChart(filteredEntries);
-        this.createProjectChart(filteredEntries);
         this.createWeeklyChart(filteredEntries);
     }
     
@@ -34,7 +33,6 @@ class ChartManager {
     updateChartsSilent(filteredEntries) {
         this.updateUsageChartSilent(filteredEntries);
         this.updateHourlyChartSilent(filteredEntries);
-        this.updateProjectChartSilent(filteredEntries);
         this.updateWeeklyChartSilent(filteredEntries);
     }
     
@@ -45,7 +43,6 @@ class ChartManager {
         console.time('updateChartsSilent');
         this.updateUsageChartSilentWithCache(aggregatedData);
         this.updateHourlyChartSilentWithCache(aggregatedData);
-        this.updateProjectChartSilentWithCache(aggregatedData);
         this.updateWeeklyChartSilentWithCache(aggregatedData);
         console.timeEnd('updateChartsSilent');
     }
@@ -57,7 +54,6 @@ class ChartManager {
         console.time('createCharts');
         this.createUsageChartWithCache(aggregatedData);
         this.createHourlyChartWithCache(aggregatedData);
-        this.createProjectChartWithCache(aggregatedData);
         this.createWeeklyChartWithCache(aggregatedData);
         console.timeEnd('createCharts');
     }
@@ -101,15 +97,6 @@ class ChartManager {
         this.charts.hourly.update('active'); // 標準的な滑らかアニメーション
     }
     
-    updateProjectChartSilentWithCache(chartData) {
-        if (!this.charts.project) return;
-        const projectData = chartData.projectData;
-        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'];
-        this.charts.project.data.labels = projectData.map(d => d.project);
-        this.charts.project.data.datasets[0].data = projectData.map(d => d.totalTokens);
-        this.charts.project.data.datasets[0].backgroundColor = colors.slice(0, projectData.length);
-        this.charts.project.update('active'); // 標準的な滑らかアニメーション
-    }
     
     updateWeeklyChartSilentWithCache(chartData) {
         if (!this.charts.weekly) return;
@@ -126,7 +113,6 @@ class ChartManager {
      */
     createUsageChartWithCache(chartData) { this.createUsageChart(chartData); }
     createHourlyChartWithCache(chartData) { this.createHourlyChart(chartData); }
-    createProjectChartWithCache(chartData) { this.createProjectChart(chartData); }
     createWeeklyChartWithCache(chartData) { this.createWeeklyChart(chartData); }
 
     /**
@@ -325,69 +311,7 @@ class ChartManager {
         this.charts.hourly.update('active'); // 標準的な滑らかアニメーション
     }
 
-    /**
-     * プロジェクト別使用量チャート
-     */
-    createProjectChart(filteredEntries = null) {
-        const ctx = document.getElementById('projectChart').getContext('2d');
-        
-        if (this.charts.project) {
-            this.charts.project.destroy();
-        }
-
-        const projectData = filteredEntries.projectData;
-        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'];
-
-        this.charts.project = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: projectData.map(d => d.project),
-                datasets: [{
-                    data: projectData.map(d => d.totalTokens),
-                    backgroundColor: colors.slice(0, projectData.length),
-                    borderColor: this.settings.darkMode ? '#1e293b' : '#ffffff',
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: {
-                    duration: 750,
-                    easing: 'easeInOutQuart'
-                },
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b',
-                            usePointStyle: true,
-                            padding: 20
-                        }
-                    }
-                }
-            }
-        });
-    }
     
-    /**
-     * プロジェクト別使用量チャートのサイレント更新
-     */
-    updateProjectChartSilent(filteredEntries) {
-        if (!this.charts.project) {
-            this.createProjectChart(filteredEntries);
-            return;
-        }
-        
-        const projectData = filteredEntries.projectData;
-        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316'];
-        
-        // データを更新（チャートを再作成せず）
-        this.charts.project.data.labels = projectData.map(d => d.project);
-        this.charts.project.data.datasets[0].data = projectData.map(d => d.totalTokens);
-        this.charts.project.data.datasets[0].backgroundColor = colors.slice(0, projectData.length);
-        this.charts.project.update('active'); // 標準的な滑らかアニメーション
-    }
 
     /**
      * 週別比較チャート
@@ -497,7 +421,6 @@ class ChartManager {
         setTimeout(() => {
             if (this.charts.usage) this.charts.usage.destroy();
             if (this.charts.hourly) this.charts.hourly.destroy();
-            if (this.charts.project) this.charts.project.destroy();
             if (this.charts.weekly) this.charts.weekly.destroy();
         }, 100);
     }

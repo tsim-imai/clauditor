@@ -327,10 +327,9 @@ class AppState {
             this.chartManager.createChartsWithCache(chartData);
         }
         
-        // 洞察とプロジェクト一覧は非同期で更新（UIブロックを防ぐ）
+        // 洞察は非同期で更新（UIブロックを防ぐ）
         setTimeout(() => {
             this.updateInsightsAsync();
-            this.updateProjectListAsync();
         }, 0);
         
     }
@@ -346,10 +345,6 @@ class AppState {
         console.log('📊 非同期洞察更新は一時的に無効化');
     }
     
-    // 非同期プロジェクト一覧更新（一時的に無効化）
-    updateProjectListAsync() {
-        console.log('📊 非同期プロジェクト一覧更新は一時的に無効化');
-    }
     
     // サイレント更新（チカチカを防ぐ）
     async updateDashboardSilent() {
@@ -361,7 +356,6 @@ class AppState {
         this.chartManager.updateChartsSilent(chartData);
         
         this.updateInsights();
-        this.updateProjectList();
     }
 
     // メッセージ統計を更新（一時的に無効化）
@@ -512,7 +506,7 @@ class AppState {
     }
     
     // 洞察更新の共通処理
-    updateInsightsCore(stats, dailyData, projectData, hourlyData) {
+    updateInsightsCore(stats, dailyData, hourlyData) {
         // 平均日使用量
         const avgDaily = dailyData.length > 0 ? Utils.roundNumber(stats.totalTokens / dailyData.length) : 0;
         document.getElementById('avgDailyUsage').textContent = Utils.formatNumber(avgDaily) + ' tokens';
@@ -520,30 +514,8 @@ class AppState {
         // 最も活発な時間
         const peakHour = hourlyData.indexOf(Math.max(...hourlyData));
         document.getElementById('peakHour').textContent = `${peakHour}:00 - ${peakHour + 1}:00`;
-
-        // 最も使用したプロジェクト
-        const topProject = projectData.length > 0 ? projectData[0] : null;
-        document.getElementById('topProject').textContent = topProject ? topProject.project : '-';
     }
 
-    // プロジェクト一覧を更新（一時的に簡易版）
-    updateProjectList() {
-        console.log('📊 プロジェクト一覧更新は一時的に無効化');
-    }
-    
-    // プロジェクト一覧更新の共通処理
-    updateProjectListCore(projectData) {
-        const container = document.getElementById('projectListCompact');
-        container.innerHTML = projectData.map(project => `
-            <div class="project-item-compact">
-                <div class="project-name-compact">${project.project}</div>
-                <div class="project-stats-compact">
-                    ${Utils.formatNumber(project.totalTokens)} tokens • 
-                    ${Utils.formatNumber(project.calls)} calls
-                </div>
-            </div>
-        `).join('');
-    }
 
 
     // UIヘルパーメソッド

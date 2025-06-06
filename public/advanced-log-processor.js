@@ -433,13 +433,6 @@ class AdvancedLogDataProcessor {
             // 実際のタイムスタンプベース時間別データを生成
             const hourlyData = await this.calculateRealHourlyPattern(period);
             
-            // プロジェクト別データ（簡易版）
-            const projectData = [
-                { project: 'Project A', totalTokens: Math.round(periodStats.totalTokens * 0.4), calls: Math.round(periodStats.entries * 0.4) },
-                { project: 'Project B', totalTokens: Math.round(periodStats.totalTokens * 0.3), calls: Math.round(periodStats.entries * 0.3) },
-                { project: 'Project C', totalTokens: Math.round(periodStats.totalTokens * 0.2), calls: Math.round(periodStats.entries * 0.2) },
-                { project: 'Other', totalTokens: Math.round(periodStats.totalTokens * 0.1), calls: Math.round(periodStats.entries * 0.1) }
-            ].filter(p => p.totalTokens > 0);
             
             // 週別データ（簡易版）
             const weeklyData = [];
@@ -465,7 +458,6 @@ class AdvancedLogDataProcessor {
                 stats: periodStats,
                 dailyData: dailyData,
                 hourlyData: hourlyData,
-                projectData: projectData,
                 weeklyData: weeklyData,
                 activeHours: await this.calculateActualActiveHours(period)
             };
@@ -476,7 +468,6 @@ class AdvancedLogDataProcessor {
                 stats: { totalTokens: 0, costJPY: 0, entries: 0 },
                 dailyData: [],
                 hourlyData: new Array(24).fill(0),
-                projectData: [],
                 weeklyData: [],
                 activeHours: 0
             };
