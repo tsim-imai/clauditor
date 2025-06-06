@@ -5,6 +5,7 @@ class AdvancedLogDataProcessor {
     constructor(settings = {}) {
         this.exchangeRate = settings.exchangeRate || 150;
         this.dailyStatsCache = new Map();
+        this.hourlyPatternsCache = new Map();
         this.lastCacheUpdate = null;
         this.cacheTTL = 5 * 60 * 1000; // 5分間キャッシュ
         console.log('🚀 AdvancedLogDataProcessor initialized');
@@ -429,37 +430,8 @@ class AdvancedLogDataProcessor {
                 }))
                 .sort((a, b) => new Date(a.date) - new Date(b.date));
             
-            // 時間別データ（よりリアルな推定版）
-            const hourlyData = new Array(24).fill(0);
-            if (dailyData.length > 0) {
-                const totalEntries = dailyData.reduce((sum, day) => sum + day.calls, 0);
-                const avgPerHour = totalEntries / 24;
-                
-                // よりリアルな使用パターンを生成
-                for (let i = 0; i < 24; i++) {
-                    let multiplier;
-                    if (i >= 6 && i <= 8) {
-                        // 朝の立ち上がり
-                        multiplier = 0.8 + Math.random() * 0.4; // 0.8-1.2
-                    } else if (i >= 9 && i <= 11) {
-                        // 午前のピーク
-                        multiplier = 1.2 + Math.random() * 0.6; // 1.2-1.8
-                    } else if (i === 12) {
-                        // ランチタイム
-                        multiplier = 0.3 + Math.random() * 0.4; // 0.3-0.7
-                    } else if (i >= 13 && i <= 17) {
-                        // 午後のピーク
-                        multiplier = 1.0 + Math.random() * 0.8; // 1.0-1.8
-                    } else if (i >= 18 && i <= 20) {
-                        // 夕方の減少
-                        multiplier = 0.4 + Math.random() * 0.6; // 0.4-1.0
-                    } else {
-                        // 夜間・早朝
-                        multiplier = 0.1 + Math.random() * 0.3; // 0.1-0.4
-                    }
-                    hourlyData[i] = Math.round(avgPerHour * multiplier);
-                }
-            }
+            // 実際のタイムスタンプベース時間別データを生成
+            const hourlyData = await this.calculateRealHourlyPattern(period);
             
             // プロジェクト別データ（簡易版）
             const projectData = [
@@ -512,10 +484,89 @@ class AdvancedLogDataProcessor {
     }
 
     /**
+     * 実際のタイムスタンプベース時間別パターンを計算（キャッシュ対応）
+     */
+    async calculateRealHourlyPattern(period) {
+        // キャッシュチェック
+        const cacheKey = `hourly_${period}`;
+        if (this.hourlyPatternsCache.has(cacheKey) && 
+            this.lastCacheUpdate && 
+            Date.now() - this.lastCacheUpdate < this.cacheTTL) {
+            console.log('🚀 時間別パターンキャッシュ使用:', period);
+            return this.hourlyPatternsCache.get(cacheKey);
+        }
+        
+        console.time('Real Hourly Pattern Calculation');
+        
+        try {
+            // 期間内の全プロジェクトからタイムスタンプデータを取得
+            const allProjects = await window.electronAPI.scanClaudeProjects();
+            const hourlyData = new Array(24).fill(0);
+            
+            // 期間フィルタリング用の開始日時を計算
+            const now = new Date();
+            let startDate;
+            
+            switch (period) {
+                case 'today':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    break;
+                case 'week':
+                    startDate = new Date(now);
+                    startDate.setDate(now.getDate() - now.getDay());
+                    startDate.setHours(0, 0, 0, 0);
+                    break;
+                case 'month':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    break;
+                case 'year':
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    break;
+                default:
+                    startDate = new Date(0); // 全期間
+            }
+            
+            // 各プロジェクトのログエントリを処理
+            for (const project of allProjects) {
+                const logEntries = await window.electronAPI.readProjectLogs(project.path);
+                
+                for (const entry of logEntries) {
+                    if (!entry.timestamp) continue;
+                    
+                    const entryDate = new Date(entry.timestamp);
+                    if (isNaN(entryDate.getTime()) || entryDate < startDate) continue;
+                    
+                    // ローカル時間の時間を取得
+                    const hour = entryDate.getHours();
+                    if (hour >= 0 && hour <= 23) {
+                        // usageデータがある場合のみカウント（実際のAPI呼び出し）
+                        if (entry.message?.usage) {
+                            hourlyData[hour]++;
+                        }
+                    }
+                }
+            }
+            
+            // キャッシュに保存
+            this.hourlyPatternsCache.set(cacheKey, hourlyData);
+            
+            console.timeEnd('Real Hourly Pattern Calculation');
+            console.log('📊 実際の時間別パターン:', hourlyData);
+            return hourlyData;
+            
+        } catch (error) {
+            console.error('実際の時間別パターン計算エラー:', error);
+            // エラー時は空配列を返す
+            return new Array(24).fill(0);
+        }
+    }
+
+    /**
      * キャッシュをクリア
      */
     clearCache() {
         this.dailyStatsCache.clear();
+        this.hourlyPatternsCache.clear();
         this.lastCacheUpdate = null;
     }
 }
