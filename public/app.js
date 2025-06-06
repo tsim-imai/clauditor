@@ -466,8 +466,8 @@ class AppState {
             // 期間設定を取得
             const periodConfig = this.dataProcessor.getPeriodConfiguration(this.currentPeriod);
             
-            // アクティブ時間の概算（トークン数ベース）
-            const estimatedActiveHours = Math.min(periodStats.entries * 0.1, 24); // 1エントリ=6分と仮定、最大24時間
+            // アクティブ時間の計算（実際のタイムスタンプ範囲ベース）
+            const actualActiveHours = await this.advancedProcessor.calculateActualActiveHours(this.currentPeriod);
             
             // 統計カードを更新
             this.dataProcessor.updateStatCard(1, {
@@ -497,7 +497,7 @@ class AppState {
             this.dataProcessor.updateStatCard(3, {
                 icon: periodConfig.card3.icon,
                 label: periodConfig.card3.label,
-                value: estimatedActiveHours.toFixed(1),
+                value: actualActiveHours.toFixed(1),
                 unit: 'hours'
             });
             
@@ -510,7 +510,7 @@ class AppState {
             });
             
             console.timeEnd('Advanced Stats Calculation');
-            console.log(`📊 高精度統計: ${periodStats.totalTokens:,}トークン, ${hasRealCost ? '実際' : '推定'}コスト: ${costValue}`);
+            console.log(`📊 高精度統計: ${periodStats.totalTokens.toLocaleString()}トークン, ${hasRealCost ? '実際' : '推定'}コスト: ${costValue}`);
             
         } catch (error) {
             console.error('高精度統計計算エラー:', error);

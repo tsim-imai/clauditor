@@ -400,13 +400,13 @@ class LogDataProcessor {
     getTimeRangeEntries(timeRange) {
         const now = new Date();
         const milliseconds = this.parseTimeRange(timeRange);
-        const endTime = new Date(now.getTime() - milliseconds);
+        const startTime = new Date(now.getTime() - milliseconds);
         
         return this.allLogEntries.filter(entry => {
             if (!entry.timestamp) return false;
             const entryTime = new Date(entry.timestamp);
             if (isNaN(entryTime.getTime())) return false;
-            return entryTime >= endTime && entryTime <= now;
+            return entryTime >= startTime && entryTime <= now;
         });
     }
 
@@ -483,15 +483,15 @@ class LogDataProcessor {
             // 60分範囲：5分単位
             const minutes = Math.floor(time.getMinutes() / 5) * 5;
             return `${year}-${month}-${day}T${hour}:${minutes.toString().padStart(2, '0')}`;
-        } else if (timeRange == 3) {
+        } else if (timeRange === '3') {
             // 3時間：10分単位
             const minutes = Math.floor(time.getMinutes() / 10) * 10;
             return `${year}-${month}-${day}T${hour}:${minutes.toString().padStart(2, '0')}`;
-        } else if (timeRange == 6) {
+        } else if (timeRange === '6') {
             // 6時間：15分単位
             const minutes = Math.floor(time.getMinutes() / 15) * 15;
             return `${year}-${month}-${day}T${hour}:${minutes.toString().padStart(2, '0')}`;
-        } else if (timeRange == 12) {
+        } else if (timeRange === '12') {
             // 12時間：30分単位
             const minutes = Math.floor(time.getMinutes() / 30) * 30;
             return `${year}-${month}-${day}T${hour}:${minutes.toString().padStart(2, '0')}`;
@@ -514,13 +514,13 @@ class LogDataProcessor {
         } else if (timeRange === '60m') {
             // 5分単位 → 時間
             return blockCount * 5 / 60;
-        } else if (timeRange == 3) {
+        } else if (timeRange === '3') {
             // 10分単位 → 時間
             return blockCount * 10 / 60;
-        } else if (timeRange == 6) {
+        } else if (timeRange === '6') {
             // 15分単位 → 時間
             return blockCount * 15 / 60;
-        } else if (timeRange == 12) {
+        } else if (timeRange === '12') {
             // 30分単位 → 時間
             return blockCount * 30 / 60;
         } else {
@@ -540,11 +540,11 @@ class LogDataProcessor {
             return { pointCount: 15, intervalMinutes: 2 }; // 30分、2分間隔
         } else if (timeRange === '60m') {
             return { pointCount: 12, intervalMinutes: 5 }; // 60分、5分間隔
-        } else if (timeRange == 3) {
+        } else if (timeRange === '3') {
             return { pointCount: 18, intervalMinutes: 10 }; // 3時間、10分間隔
-        } else if (timeRange == 6) {
+        } else if (timeRange === '6') {
             return { pointCount: 24, intervalMinutes: 15 }; // 6時間、15分間隔
-        } else if (timeRange == 12) {
+        } else if (timeRange === '12') {
             return { pointCount: 24, intervalMinutes: 30 }; // 12時間、30分間隔
         } else { // 24時間
             return { pointCount: 24, intervalMinutes: 60 }; // 24時間、1時間間隔
@@ -660,11 +660,11 @@ class LogDataProcessor {
             return { pointCount: 15, intervalMinutes: 2 }; // 30分、2分間隔
         } else if (timeRange === '60m') {
             return { pointCount: 12, intervalMinutes: 5 }; // 60分、5分間隔
-        } else if (timeRange == 3) {
+        } else if (timeRange === '3') {
             return { pointCount: 18, intervalMinutes: 10 }; // 3時間、10分間隔
-        } else if (timeRange == 6) {
+        } else if (timeRange === '6') {
             return { pointCount: 24, intervalMinutes: 15 }; // 6時間、15分間隔
-        } else if (timeRange == 12) {
+        } else if (timeRange === '12') {
             return { pointCount: 24, intervalMinutes: 30 }; // 12時間、30分間隔
         } else { // 24時間
             return { pointCount: 24, intervalMinutes: 60 }; // 24時間、1時間間隔
@@ -680,7 +680,7 @@ class LogDataProcessor {
             const minutes = this.getRoundedMinutes(time, timeRange);
             return time.getHours().toString().padStart(2, '0') + ':' + 
                    minutes.toString().padStart(2, '0');
-        } else if (timeRange == 24) {
+        } else if (timeRange === '24') {
             return time.getHours().toString().padStart(2, '0') + ':00';
         } else {
             const minutes = this.getRoundedMinutes(time, timeRange);
@@ -699,11 +699,11 @@ class LogDataProcessor {
             return Math.floor(time.getMinutes() / 2) * 2;
         } else if (timeRange === '60m') {
             return Math.floor(time.getMinutes() / 5) * 5;
-        } else if (timeRange == 3) {
+        } else if (timeRange === '3') {
             return Math.floor(time.getMinutes() / 10) * 10;
-        } else if (timeRange == 6) {
+        } else if (timeRange === '6') {
             return Math.floor(time.getMinutes() / 15) * 15;
-        } else if (timeRange == 12) {
+        } else if (timeRange === '12') {
             return Math.floor(time.getMinutes() / 30) * 30;
         } else {
             return 0;

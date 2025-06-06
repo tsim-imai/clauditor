@@ -76,7 +76,7 @@ class AdvancedLogDataProcessor {
                 }
             }
             
-            console.log(`✅ ${totalProcessed:,}エントリを処理完了`);
+            console.log(`✅ ${totalProcessed.toLocaleString()}エントリを処理完了`);
             
         } catch (error) {
             console.error('統計計算エラー:', error);
@@ -183,6 +183,118 @@ class AdvancedLogDataProcessor {
             usd: estimatedUSD,
             jpy: estimatedUSD * this.exchangeRate
         };
+    }
+
+    /**
+     * 実際のアクティブ時間を計算（タイムスタンプ範囲ベース）
+     */
+    async calculateActualActiveHours(period) {
+        try {
+            const allStats = await this.calculateAllDailyStats();
+            const now = new Date();
+            let startDate;
+            
+            // 期間の開始日を計算
+            switch (period) {
+                case 'today':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    break;
+                case 'week':
+                    startDate = new Date(now);
+                    startDate.setDate(now.getDate() - now.getDay());
+                    startDate.setHours(0, 0, 0, 0);
+                    break;
+                case 'month':
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    break;
+                case 'year':
+                    startDate = new Date(now.getFullYear(), 0, 1);
+                    break;
+                default:
+                    // 'all' の場合は全期間のタイムスタンプを取得
+                    return await this.calculateAllPeriodActiveHours();
+            }
+            
+            // 期間内の全エントリのタイムスタンプを収集
+            const allProjects = await window.electronAPI.scanClaudeProjects();
+            const timestamps = [];
+            
+            for (const project of allProjects) {
+                const logEntries = await window.electronAPI.readProjectLogs(project.path);
+                
+                for (const entry of logEntries) {
+                    if (!entry.timestamp) continue;
+                    
+                    const entryDate = new Date(entry.timestamp);
+                    
+                    // 期間内のエントリのみ対象
+                    if (period === 'all' || entryDate >= startDate) {
+                        timestamps.push(entryDate);
+                    }
+                }
+            }
+            
+            // タイムスタンプをソート
+            timestamps.sort((a, b) => a - b);
+            
+            if (timestamps.length === 0) {
+                return 0;
+            }
+            
+            if (timestamps.length === 1) {
+                return 0.1; // 単発の場合は6分と仮定
+            }
+            
+            // 最初と最後のタイムスタンプから実際の使用時間を計算
+            const firstTime = timestamps[0];
+            const lastTime = timestamps[timestamps.length - 1];
+            const actualHours = (lastTime - firstTime) / (1000 * 60 * 60);
+            
+            // 最小値のみ設定（0時間未満にならないよう）
+            return Math.max(actualHours, 0.1);
+            
+        } catch (error) {
+            console.error('アクティブ時間計算エラー:', error);
+            return 0;
+        }
+    }
+    
+    /**
+     * 全期間のアクティブ時間を計算
+     */
+    async calculateAllPeriodActiveHours() {
+        try {
+            const allProjects = await window.electronAPI.scanClaudeProjects();
+            const timestamps = [];
+            
+            for (const project of allProjects) {
+                const logEntries = await window.electronAPI.readProjectLogs(project.path);
+                
+                for (const entry of logEntries) {
+                    if (entry.timestamp) {
+                        timestamps.push(new Date(entry.timestamp));
+                    }
+                }
+            }
+            
+            timestamps.sort((a, b) => a - b);
+            
+            if (timestamps.length <= 1) {
+                return timestamps.length * 0.1;
+            }
+            
+            const firstTime = timestamps[0];
+            const lastTime = timestamps[timestamps.length - 1];
+            const totalDays = (lastTime - firstTime) / (1000 * 60 * 60 * 24);
+            
+            // 全期間の場合は日数ベースで現実的な時間を推定
+            // 平均的な1日あたりの使用時間を3時間と仮定
+            return Math.min(totalDays * 3, (lastTime - firstTime) / (1000 * 60 * 60));
+            
+        } catch (error) {
+            console.error('全期間アクティブ時間計算エラー:', error);
+            return 0;
+        }
     }
 
     /**
