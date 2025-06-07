@@ -391,7 +391,7 @@ class AppState {
         this.updateMessageStats();
         await this.updateStatsOverviewWithData(chartData); // 事前取得データを使用
         
-        this.chartManager.updateChartsSilent(chartData);
+        this.chartManager.updateChartsSilentWithCache(chartData);
         
         this.updateInsightsWithData(chartData);
     }

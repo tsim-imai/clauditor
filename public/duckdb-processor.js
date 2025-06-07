@@ -64,6 +64,72 @@ class DuckDBDataProcessor {
     }
 
     /**
+     * 比較期間の開始日と終了日を取得
+     */
+    getComparisonPeriod(period) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        switch (period) {
+            case 'today':
+                // 前日
+                const yesterday = new Date(today);
+                yesterday.setDate(today.getDate() - 1);
+                const yesterdayEnd = new Date(yesterday);
+                yesterdayEnd.setDate(yesterday.getDate() + 1);
+                return {
+                    start: yesterday.toISOString(),
+                    end: yesterdayEnd.toISOString(),
+                    label: '昨日'
+                };
+            case 'week':
+                // 先週（日曜日〜土曜日）
+                const lastWeekStart = new Date(today);
+                lastWeekStart.setDate(today.getDate() - today.getDay() - 7);
+                const lastWeekEnd = new Date(lastWeekStart);
+                lastWeekEnd.setDate(lastWeekStart.getDate() + 7);
+                return {
+                    start: lastWeekStart.toISOString(),
+                    end: lastWeekEnd.toISOString(),
+                    label: '先週'
+                };
+            case 'month':
+                // 先月
+                const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 1);
+                return {
+                    start: lastMonth.toISOString(),
+                    end: lastMonthEnd.toISOString(),
+                    label: '先月'
+                };
+            case 'year':
+                // 前年
+                const lastYear = new Date(today.getFullYear() - 1, 0, 1);
+                const lastYearEnd = new Date(today.getFullYear(), 0, 1);
+                return {
+                    start: lastYear.toISOString(),
+                    end: lastYearEnd.toISOString(),
+                    label: '前年'
+                };
+            case 'all':
+                // 前年（全期間も前年比較）
+                const prevYear = new Date(today.getFullYear() - 1, 0, 1);
+                const prevYearEnd = new Date(today.getFullYear(), 0, 1);
+                return {
+                    start: prevYear.toISOString(),
+                    end: prevYearEnd.toISOString(),
+                    label: '前年'
+                };
+            default:
+                return {
+                    start: '1970-01-01T00:00:00.000Z',
+                    end: '1970-01-01T00:00:00.000Z',
+                    label: '比較なし'
+                };
+        }
+    }
+
+    /**
      * 期間に応じた適切な集計単位を決定
      */
     async getAggregationUnit(period) {
@@ -122,6 +188,69 @@ class DuckDBDataProcessor {
         } catch (error) {
             console.warn('自動集計単位決定でエラー:', error);
             return 'daily'; // エラー時はデフォルト
+        }
+    }
+
+    /**
+     * 比較期間用クエリを生成
+     */
+    generateComparisonQuery(period, unit, comparisonPeriod) {
+        const whereClause = `WHERE timestamp IS NOT NULL AND timestamp >= '${comparisonPeriod.start}' AND timestamp < '${comparisonPeriod.end}'`;
+        
+        switch (unit) {
+            case 'hourly':
+                // 今日 vs 昨日: 時間別比較
+                return `
+                    SELECT 
+                        HOUR(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as time_unit,
+                        SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER) + 
+                            CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as total_tokens
+                    FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
+                    ${whereClause}
+                    GROUP BY HOUR(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')
+                    ORDER BY time_unit ASC
+                `;
+            
+            case 'monthly':
+                // 今年 vs 前年: 月別比較
+                return `
+                    SELECT 
+                        EXTRACT(MONTH FROM timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as month,
+                        SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER) + 
+                            CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as total_tokens
+                    FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
+                    ${whereClause}
+                    GROUP BY EXTRACT(MONTH FROM timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')
+                    ORDER BY month ASC
+                `;
+            
+            case 'daily':
+            default:
+                if (period === 'week') {
+                    // 今週 vs 先週: 曜日別比較
+                    return `
+                        SELECT 
+                            EXTRACT(DOW FROM timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as day_of_week,
+                            SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER) + 
+                                CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as total_tokens
+                        FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
+                        ${whereClause}
+                        GROUP BY EXTRACT(DOW FROM timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')
+                        ORDER BY day_of_week ASC
+                    `;
+                } else {
+                    // 今月 vs 先月: 日別比較
+                    return `
+                        SELECT 
+                            EXTRACT(DAY FROM timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as day,
+                            SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER) + 
+                                CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as total_tokens
+                        FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
+                        ${whereClause}
+                        GROUP BY EXTRACT(DAY FROM timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')
+                        ORDER BY day ASC
+                    `;
+                }
         }
     }
 
@@ -257,23 +386,58 @@ class DuckDBDataProcessor {
                         CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as total_tokens,
                     SUM(COALESCE(costUSD, 0)) as total_cost_usd,
                     COUNT(*) as total_entries,
-                    COUNT(DISTINCT DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')) as active_days,
-                    EXTRACT(EPOCH FROM (MAX(timestamp::TIMESTAMP) - MIN(timestamp::TIMESTAMP))) / 3600.0 as active_hours
+                    COUNT(DISTINCT DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')) as active_days
                 FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
                 WHERE timestamp IS NOT NULL 
                   AND timestamp >= '${startDate}'
             `;
 
+            // アクティブ時間計算クエリ（期間に応じた適切な計算）
+            let activeHoursQuery;
+            if (period === 'today') {
+                // 今日: ユニークな時間帯数（0-23時）
+                const endDate = new Date(new Date(startDate).getTime() + 24 * 60 * 60 * 1000).toISOString();
+                activeHoursQuery = `
+                    SELECT 
+                        COUNT(DISTINCT HOUR(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')) as active_hours
+                    FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
+                    WHERE timestamp IS NOT NULL 
+                      AND timestamp >= '${startDate}'
+                      AND timestamp < '${endDate}'
+                `;
+            } else {
+                // 週・月・年・全期間: 日付×時間の組み合わせ数
+                activeHoursQuery = `
+                    SELECT 
+                        COUNT(DISTINCT CONCAT(
+                            DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo'),
+                            '-',
+                            HOUR(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')
+                        )) as active_hours
+                    FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
+                    WHERE timestamp IS NOT NULL 
+                      AND timestamp >= '${startDate}'
+                `;
+            }
+
+            // 比較期間データクエリ（週別比較チャート用）
+            const comparisonPeriod = this.getComparisonPeriod(period);
+            const comparisonUnit = aggregationUnit; // 同じ集計単位を使用
+            const comparisonQuery = this.generateComparisonQuery(period, comparisonUnit, comparisonPeriod);
+
             // 並列クエリ実行
-            const [timeSeriesData, hourlyData, projectData, statsData] = await Promise.all([
+            const [timeSeriesData, hourlyData, projectData, statsData, activeHoursData, comparisonData] = await Promise.all([
                 this.executeDuckDBQuery(timeSeriesQuery),
                 this.executeDuckDBQuery(hourlyQuery),
                 this.executeDuckDBQuery(projectQuery),
-                this.executeDuckDBQuery(statsQuery)
+                this.executeDuckDBQuery(statsQuery),
+                this.executeDuckDBQuery(activeHoursQuery),
+                this.executeDuckDBQuery(comparisonQuery)
             ]);
 
             // データを処理してChart.js互換形式に変換
-            const chartData = this.formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, statsData[0], period, aggregationUnit);
+            const actualActiveHours = activeHoursData && activeHoursData[0] ? activeHoursData[0].active_hours : 0;
+            const chartData = this.formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, statsData[0], period, aggregationUnit, actualActiveHours, comparisonData, comparisonPeriod);
             
             // 両方のキャッシュに保存
             const cacheEntry = { data: chartData, timestamp: Date.now() };
@@ -315,7 +479,7 @@ class DuckDBDataProcessor {
     /**
      * 時系列データをChartManager互換形式にフォーマット
      */
-    formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, stats, period, unit) {
+    formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, stats, period, unit, actualActiveHours = null, comparisonData = null, comparisonPeriod = null) {
         console.log('🔍 formatChartDataWithTimeSeries 開始:', {
             timeSeriesDataLength: timeSeriesData?.length,
             hourlyDataLength: hourlyData?.length,
@@ -402,6 +566,9 @@ class DuckDBDataProcessor {
             activeDays: safeStats.active_days || 0
         };
 
+        // 比較データを処理（週別比較チャート用）
+        const comparisonChartData = this.generateComparisonChartData(timeSeriesData, comparisonData, period, unit, comparisonPeriod);
+
         // 週別データを生成（既存のチャート用）
         const weeklyData = unit === 'daily' ? this.generateWeeklyData(formattedTimeSeriesData) : [];
 
@@ -412,8 +579,11 @@ class DuckDBDataProcessor {
             // hourlyChartで使用される時間別データ
             hourlyData: hourlyTokens,
             
-            // 週別データ
+            // 週別データ（旧互換性用）
             weeklyData: weeklyData,
+            
+            // 比較チャートデータ（新しい動的比較用）
+            comparisonData: comparisonChartData,
             
             // Chart.js用のプロジェクトデータ
             projectData: projectTokens,
@@ -429,8 +599,8 @@ class DuckDBDataProcessor {
                 entries: totalStats.totalEntries
             },
             
-            // アクティブ時間
-            activeHours: totalStats.activeHours,
+            // アクティブ時間（実際に使用された時間帯の数）
+            activeHours: actualActiveHours !== null ? actualActiveHours : totalStats.activeHours,
             
             // 期間とユニット情報（デバッグ用）
             meta: {
@@ -520,6 +690,147 @@ class DuckDBDataProcessor {
                 stats: stats
             }
         };
+    }
+
+    /**
+     * 比較チャートデータを生成
+     */
+    generateComparisonChartData(currentData, comparisonData, period, unit, comparisonPeriod) {
+        if (!comparisonPeriod) {
+            return {
+                current: { data: [], labels: [] },
+                comparison: { data: [], labels: [] },
+                currentLabel: '現在',
+                comparisonLabel: '比較なし'
+            };
+        }
+
+        // 期間に応じたラベル設定
+        const currentLabel = this.getPeriodLabel(period);
+        const comparisonLabel = comparisonPeriod.label;
+
+        let currentChartData = [];
+        let comparisonChartData = [];
+        let labels = [];
+
+        if (unit === 'hourly') {
+            // 時間別比較（今日 vs 昨日）
+            labels = Array.from({length: 24}, (_, i) => `${i}:00`);
+            currentChartData = new Array(24).fill(0);
+            comparisonChartData = new Array(24).fill(0);
+
+            if (Array.isArray(currentData)) {
+                currentData.forEach(row => {
+                    if (row && typeof row.time_unit !== 'undefined' && row.time_unit >= 0 && row.time_unit <= 23) {
+                        currentChartData[row.time_unit] = row.total_tokens || 0;
+                    }
+                });
+            }
+
+            if (Array.isArray(comparisonData)) {
+                comparisonData.forEach(row => {
+                    if (row && typeof row.time_unit !== 'undefined' && row.time_unit >= 0 && row.time_unit <= 23) {
+                        comparisonChartData[row.time_unit] = row.total_tokens || 0;
+                    }
+                });
+            }
+
+        } else if (unit === 'monthly') {
+            // 月別比較（今年 vs 前年）
+            labels = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+            currentChartData = new Array(12).fill(0);
+            comparisonChartData = new Array(12).fill(0);
+
+            if (Array.isArray(currentData)) {
+                currentData.forEach(row => {
+                    if (row && row.month >= 1 && row.month <= 12) {
+                        currentChartData[row.month - 1] = row.total_tokens || 0;
+                    }
+                });
+            }
+
+            if (Array.isArray(comparisonData)) {
+                comparisonData.forEach(row => {
+                    if (row && row.month >= 1 && row.month <= 12) {
+                        comparisonChartData[row.month - 1] = row.total_tokens || 0;
+                    }
+                });
+            }
+
+        } else if (period === 'week') {
+            // 曜日別比較（今週 vs 先週）
+            labels = ['日', '月', '火', '水', '木', '金', '土'];
+            currentChartData = new Array(7).fill(0);
+            comparisonChartData = new Array(7).fill(0);
+
+            // 現在のデータから曜日別データを抽出
+            // timeSeriesDataは日別なので、曜日に変換
+            if (Array.isArray(currentData)) {
+                currentData.forEach(row => {
+                    if (row && row.date) {
+                        const date = new Date(row.date);
+                        const dayOfWeek = date.getDay(); // 0=日曜日
+                        currentChartData[dayOfWeek] += row.total_tokens || 0;
+                    }
+                });
+            }
+
+            if (Array.isArray(comparisonData)) {
+                comparisonData.forEach(row => {
+                    if (row && typeof row.day_of_week !== 'undefined' && row.day_of_week >= 0 && row.day_of_week <= 6) {
+                        comparisonChartData[row.day_of_week] = row.total_tokens || 0;
+                    }
+                });
+            }
+
+        } else {
+            // 日別比較（今月 vs 先月）
+            const maxDays = 31;
+            labels = Array.from({length: maxDays}, (_, i) => `${i + 1}日`);
+            currentChartData = new Array(maxDays).fill(0);
+            comparisonChartData = new Array(maxDays).fill(0);
+
+            if (Array.isArray(currentData)) {
+                currentData.forEach(row => {
+                    if (row && row.date) {
+                        const date = new Date(row.date);
+                        const day = date.getDate();
+                        if (day >= 1 && day <= maxDays) {
+                            currentChartData[day - 1] = row.total_tokens || 0;
+                        }
+                    }
+                });
+            }
+
+            if (Array.isArray(comparisonData)) {
+                comparisonData.forEach(row => {
+                    if (row && row.day >= 1 && row.day <= maxDays) {
+                        comparisonChartData[row.day - 1] = row.total_tokens || 0;
+                    }
+                });
+            }
+        }
+
+        return {
+            current: { data: currentChartData, labels: labels },
+            comparison: { data: comparisonChartData, labels: labels },
+            currentLabel: currentLabel,
+            comparisonLabel: comparisonLabel
+        };
+    }
+
+    /**
+     * 期間ラベルを取得
+     */
+    getPeriodLabel(period) {
+        switch (period) {
+            case 'today': return '今日';
+            case 'week': return '今週';
+            case 'month': return '今月';
+            case 'year': return '今年';
+            case 'all': return '全期間';
+            default: return '現在';
+        }
     }
 
     /**
