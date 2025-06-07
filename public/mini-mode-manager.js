@@ -11,6 +11,7 @@ class MiniModeManager {
         this.timeRange = '10m'; // デフォルト10分
         this.miniCache = new Map(); // ミニモード専用キャッシュ
         this.miniCacheTime = 10000; // 10秒キャッシュ（高速化）
+        this.updateInterval = null; // 定期更新タイマー
         
         console.log('MiniModeManager initialized with DuckDBProcessor');
     }
@@ -53,6 +54,9 @@ class MiniModeManager {
             
             // 一度のデータ取得で全て更新（最適化）
             await this.updateAllInOne();
+            
+            // ミニモード専用定期更新を開始
+            this.startAutoUpdate();
         } catch (error) {
             console.error('Failed to enter mini mode:', error);
             throw new Error('最小ウィンドウモードに切り替えできませんでした');
@@ -74,6 +78,9 @@ class MiniModeManager {
             
             this.isActive = false;
             this.destroyChart();
+            
+            // 定期更新を停止
+            this.stopAutoUpdate();
         } catch (error) {
             console.error('Failed to exit mini mode:', error);
             throw new Error('通常モードに戻すことができませんでした');
@@ -87,7 +94,85 @@ class MiniModeManager {
         this.timeRange = timeRange;
         if (this.isActive) {
             await this.updateAnimated(); // アニメーション付きで更新
+            
+            // 時間範囲変更時は定期更新をリスタート（最適な間隔で）
+            this.restartAutoUpdate();
         }
+    }
+
+    /**
+     * 自動更新を開始
+     */
+    startAutoUpdate() {
+        if (this.updateInterval) {
+            clearInterval(this.updateInterval);
+        }
+        
+        // 時間範囲に応じて更新間隔を調整
+        const updateIntervalMs = this.getOptimalUpdateInterval();
+        
+        console.log(`🔄 ミニモード自動更新開始: ${updateIntervalMs/1000}秒間隔 (${this.timeRange})`);
+        
+        this.updateInterval = setInterval(async () => {
+            if (this.isActive) {
+                console.log(`🔄 ミニモード定期更新: ${this.timeRange}`);
+                // キャッシュをクリアして最新データを取得
+                this.clearMiniCache();
+                await this.updateAllInOne();
+            }
+        }, updateIntervalMs);
+    }
+
+    /**
+     * 自動更新を停止
+     */
+    stopAutoUpdate() {
+        if (this.updateInterval) {
+            clearInterval(this.updateInterval);
+            this.updateInterval = null;
+            console.log('🛑 ミニモード自動更新停止');
+        }
+    }
+
+    /**
+     * 自動更新をリスタート
+     */
+    restartAutoUpdate() {
+        this.stopAutoUpdate();
+        this.startAutoUpdate();
+    }
+
+    /**
+     * 最適な更新間隔を取得
+     */
+    getOptimalUpdateInterval() {
+        if (this.timeRange.endsWith('m')) {
+            const minutes = parseInt(this.timeRange);
+            if (minutes <= 10) {
+                return 30000; // 30秒間隔（短い期間は頻繁に）
+            } else if (minutes <= 30) {
+                return 60000; // 1分間隔
+            } else {
+                return 120000; // 2分間隔
+            }
+        } else {
+            const hours = parseInt(this.timeRange);
+            if (hours <= 1) {
+                return 60000; // 1分間隔
+            } else if (hours <= 6) {
+                return 300000; // 5分間隔
+            } else {
+                return 600000; // 10分間隔
+            }
+        }
+    }
+
+    /**
+     * ミニキャッシュをクリア
+     */
+    clearMiniCache() {
+        this.miniCache.clear();
+        console.log('🧹 ミニキャッシュクリア');
     }
 
     /**
