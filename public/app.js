@@ -141,8 +141,8 @@ class AppState {
         });
         
         // 最小モード時間範囲変更
-        document.getElementById('miniTimeRange').addEventListener('change', (e) => {
-            this.miniModeManager.setTimeRange(e.target.value);
+        document.getElementById('miniTimeRange').addEventListener('change', async (e) => {
+            await this.miniModeManager.setTimeRange(e.target.value);
         });
 
         // DuckDB監視システム用: Ctrl+Shift+T でDuckDBテスト
@@ -254,7 +254,7 @@ class AppState {
             
             // 最小ウィンドウモードの場合は更新
             if (this.miniModeManager.isEnabled()) {
-                this.miniModeManager.update();
+                await this.miniModeManager.update();
             }
         } catch (error) {
             console.error('Failed to refresh data:', error);
@@ -373,7 +373,7 @@ class AppState {
     async updateDashboardWithData(chartData) {
         // **高精度版**: メモリ内フィルタリングで高速化
         console.time('🚀 Dashboard Update');
-        this.updateMessageStats();
+        await this.updateMessageStats();
         await this.updateStatsOverviewWithData(chartData); // 事前取得データを使用
         console.timeEnd('🚀 Dashboard Update');
         
@@ -411,7 +411,7 @@ class AppState {
     
     // サイレント更新を事前取得データで実行（重複処理を回避）
     async updateDashboardSilentWithData(chartData) {
-        this.updateMessageStats();
+        await this.updateMessageStats();
         await this.updateStatsOverviewWithData(chartData); // 事前取得データを使用
         
         this.chartManager.updateChartsSilentWithCache(chartData);
@@ -446,10 +446,10 @@ class AppState {
     }
 
     // メッセージ統計を更新（一時的に無効化）
-    updateMessageStats() {
+    async updateMessageStats() {
         // 最小ウィンドウモードの表示のみ
         if (this.miniModeManager.isEnabled()) {
-            this.miniModeManager.updateMessageStats();
+            await this.miniModeManager.updateMessageStats();
         }
     }
 
