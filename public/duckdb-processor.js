@@ -7,7 +7,9 @@ class DuckDBDataProcessor {
         this.cache = new Map();
         this.cacheTime = 30000; // 30秒キャッシュ
         this.fastCache = new Map(); // 高速キャッシュ（期間フィルタリング用）
-        this.fastCacheTime = 5000; // 5秒キャッシュ（期間変更の高頻度対応）
+        this.fastCacheTime = 15000; // 15秒キャッシュ（期間変更の高頻度対応を向上）
+        this.baseDataCache = new Map(); // 基本データキャッシュ（全期間データ）
+        this.baseDataCacheTime = 60000; // 1分キャッシュ
         // ユーザーのホームディレクトリを取得してフルパスに変換
         this.projectsPath = this.getProjectsPath();
     }
@@ -596,11 +598,15 @@ class DuckDBDataProcessor {
                 outputTokens: totalStats.outputTokens,
                 costUSD: totalStats.totalCostUSD,
                 costJPY: totalStats.totalCostJPY,
-                entries: totalStats.totalEntries
+                entries: totalStats.totalEntries,
+                projectCount: projectLabels.length // プロジェクト数を追加
             },
             
             // アクティブ時間（実際に使用された時間帯の数）
             activeHours: actualActiveHours !== null ? actualActiveHours : totalStats.activeHours,
+            
+            // アクティブ日数（実際に使用した日数）
+            activeDays: totalStats.activeDays,
             
             // 期間とユニット情報（デバッグ用）
             meta: {
@@ -676,7 +682,8 @@ class DuckDBDataProcessor {
                 outputTokens: totalStats.outputTokens,
                 costUSD: totalStats.totalCostUSD,
                 costJPY: totalStats.totalCostJPY,
-                entries: totalStats.totalEntries
+                entries: totalStats.totalEntries,
+                projectCount: projectLabels.length // プロジェクト数を追加
             },
             
             // アクティブ時間
@@ -881,6 +888,7 @@ class DuckDBDataProcessor {
         console.log('🧹 DuckDB キャッシュクリア');
         this.cache.clear();
         this.fastCache.clear();
+        this.baseDataCache.clear();
     }
 
     /**
@@ -896,6 +904,11 @@ class DuckDBDataProcessor {
         for (const [key] of this.fastCache) {
             if (key.includes(pattern)) {
                 this.fastCache.delete(key);
+            }
+        }
+        for (const [key] of this.baseDataCache) {
+            if (key.includes(pattern)) {
+                this.baseDataCache.delete(key);
             }
         }
     }

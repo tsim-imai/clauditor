@@ -51,25 +51,25 @@ class AppState {
                 card1: { icon: 'today', label: '今日の使用量' },
                 card2: { icon: 'attach_money', label: '今日のコスト' },
                 card3: { icon: 'schedule', label: '今日の使用時間' },
-                card4: { icon: 'compare_arrows', label: '昨日との比較' }
+                card4: { icon: 'folder', label: 'プロジェクト数' }
             },
             week: {
                 card1: { icon: 'date_range', label: '今週の使用量' },
                 card2: { icon: 'attach_money', label: '今週のコスト' },
                 card3: { icon: 'schedule', label: '今週の使用時間' },
-                card4: { icon: 'compare_arrows', label: '先週との比較' }
+                card4: { icon: 'folder', label: 'プロジェクト数' }
             },
             month: {
                 card1: { icon: 'calendar_month', label: '今月の使用量' },
                 card2: { icon: 'attach_money', label: '今月のコスト' },
                 card3: { icon: 'schedule', label: '今月の使用時間' },
-                card4: { icon: 'compare_arrows', label: '先月との比較' }
+                card4: { icon: 'folder', label: 'プロジェクト数' }
             },
             year: {
                 card1: { icon: 'calendar_today', label: '今年の使用量' },
                 card2: { icon: 'attach_money', label: '今年のコスト' },
                 card3: { icon: 'schedule', label: '今年の使用時間' },
-                card4: { icon: 'compare_arrows', label: '昨年との比較' }
+                card4: { icon: 'folder', label: 'プロジェクト数' }
             },
             all: {
                 card1: { icon: 'trending_up', label: '総使用量' },
@@ -265,8 +265,8 @@ class AppState {
     }
 
 
-    // 時間期間を設定（アニメーション対応版）
-    setTimePeriod(period) {
+    // 時間期間を設定（最適化版）
+    async setTimePeriod(period) {
         
         this.currentPeriod = period;
         
@@ -275,11 +275,22 @@ class AppState {
             btn.classList.toggle('active', btn.dataset.period === period);
         });
         
-        // 即座にローディング状態を表示
-        this.showPeriodChangeLoading();
+        // キャッシュ確認による高速更新
+        const cacheKey = `chart:${period}`;
+        const fastCached = this.duckDBProcessor.fastCache.get(cacheKey);
         
-        // 非同期でデータ更新（UIブロックを避ける）
-        this.updateDashboardAsync();
+        if (fastCached && Date.now() - fastCached.timestamp < this.duckDBProcessor.fastCacheTime) {
+            // キャッシュヒット: 即座に更新
+            console.log(`⚡ 高速期間切り替え: ${period}`);
+            this.updateDashboardSilentWithData(fastCached.data);
+            
+            // バックグラウンドで最新データ確認（必要に応じて更新）
+            setTimeout(() => this.refreshPeriodDataBackground(period), 100);
+        } else {
+            // キャッシュミス: 通常のローディング処理
+            this.showPeriodChangeLoading();
+            await this.updateDashboardAsync();
+        }
         
     }
 
@@ -407,6 +418,21 @@ class AppState {
         }
     }
 
+    // バックグラウンドでの期間データ更新
+    async refreshPeriodDataBackground(period) {
+        try {
+            console.log(`🔄 バックグラウンド更新: ${period}`);
+            const freshData = await this.duckDBProcessor.getChartCompatibleData(period);
+            
+            // 現在表示中の期間と一致する場合のみ更新
+            if (this.currentPeriod === period) {
+                this.updateDashboardSilentWithData(freshData);
+            }
+        } catch (error) {
+            console.warn('バックグラウンド更新エラー:', error);
+        }
+    }
+
     // メッセージ統計を更新（一時的に無効化）
     updateMessageStats() {
         // 最小ウィンドウモードの表示のみ
@@ -493,7 +519,8 @@ class AppState {
                     outputTokens: 0,
                     costUSD: 0,
                     costJPY: 0,
-                    entries: 0
+                    entries: 0,
+                    projectCount: 0
                 }, 0);
                 return;
             }
@@ -505,7 +532,8 @@ class AppState {
                 outputTokens: chartData.stats.outputTokens || 0,
                 costUSD: chartData.stats.costUSD || 0,
                 costJPY: chartData.stats.costJPY || 0,
-                entries: chartData.stats.entries || 0
+                entries: chartData.stats.entries || 0,
+                projectCount: chartData.stats.projectCount || 0
             };
             
             // activeHoursを正しく取得（chartDataの直接プロパティとして渡される）
@@ -530,7 +558,8 @@ class AppState {
                 outputTokens: 0,
                 costUSD: 0,
                 costJPY: 0,
-                entries: 0
+                entries: 0,
+                projectCount: 0
             }, 0);
         }
     }
@@ -555,7 +584,8 @@ class AppState {
                 outputTokens: periodStats.outputTokens || 0,
                 costUSD: periodStats.costUSD || 0,
                 costJPY: periodStats.costJPY || 0,
-                entries: periodStats.entries || 0
+                entries: periodStats.entries || 0,
+                projectCount: periodStats.projectCount || 0
             };
             
             // アクティブ時間の計算
@@ -595,12 +625,12 @@ class AppState {
                 unit: 'hours'
             });
             
-            // 4番目のカード
+            // 4番目のカード - プロジェクト数
             this.updateStatCard(4, {
                 icon: periodConfig.card4.icon,
                 label: periodConfig.card4.label,
-                value: Utils.formatNumber(safeStats.entries),
-                unit: 'entries'
+                value: safeStats.projectCount || 0,
+                unit: 'projects'
             });
             
             console.timeEnd('Advanced Stats Calculation');
@@ -695,9 +725,13 @@ class AppState {
     // 洞察を事前取得データで更新（重複処理を回避）
     updateInsightsWithData(chartData) {
         try {
-            // 平均日使用量
-            const avgDaily = chartData.dailyData.length > 0 ? 
-                Utils.roundNumber(chartData.stats.totalTokens / chartData.dailyData.length) : 0;
+            // 平均日使用量（DuckDBの正確な使用日数を使用）
+            let avgDaily = 0;
+            if (chartData.stats.totalTokens > 0) {
+                // DuckDBで計算された実際の使用日数を使用
+                const actualDays = chartData.activeDays || 1;
+                avgDaily = Utils.roundNumber(chartData.stats.totalTokens / actualDays);
+            }
             document.getElementById('avgDailyUsage').textContent = Utils.formatNumber(avgDaily) + ' tokens';
 
             // 最も活発な時間
@@ -707,6 +741,7 @@ class AppState {
             console.error('洞察更新エラー:', error);
         }
     }
+
     
     // 非同期洞察更新（事前取得データ版）
     updateInsightsAsyncWithData(chartData) {
