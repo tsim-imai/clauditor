@@ -9,20 +9,17 @@ class AppState {
         this.error = null;
         this.refreshDebounceTimer = null;
         
-        // DuckDBデータプロセッサーインスタンスを作成（高速処理）
+        // DuckDBデータプロセッサーインスタンスを作成（統一データ処理）
         this.duckDBProcessor = new DuckDBDataProcessor();
         
-        // AdvancedLogDataProcessorインスタンスを作成（フォールバック用）
-        this.dataProcessor = new AdvancedLogDataProcessor(this.settings);
-        
         // MiniModeManagerインスタンスを作成
-        this.miniModeManager = new MiniModeManager(this.dataProcessor, this.settings);
+        this.miniModeManager = new MiniModeManager(this.duckDBProcessor, this.settings);
         
         // CalendarManagerインスタンスを作成
-        this.calendarManager = new CalendarManager(this.dataProcessor, this.settings);
+        this.calendarManager = new CalendarManager(this.duckDBProcessor, this.settings);
         
         // ChartManagerインスタンスを作成
-        this.chartManager = new ChartManager(this.dataProcessor, this.settings);
+        this.chartManager = new ChartManager(this.duckDBProcessor, this.settings);
         
         // SettingsManagerインスタンスを作成
         this.settingsManager = new SettingsManager();
@@ -31,7 +28,6 @@ class AppState {
         // 設定変更時のコールバックを設定
         this.settingsManager.setOnSettingsChange((newSettings) => {
             this.settings = newSettings;
-            this.dataProcessor.exchangeRate = this.settings.exchangeRate;
             this.miniModeManager.updateSettings(this.settings);
             this.calendarManager.updateSettings(this.settings);
             this.chartManager.updateSettings(this.settings);
@@ -163,7 +159,7 @@ class AppState {
 
         // チャートタイプ変更
         document.getElementById('usageChartType').addEventListener('change', async () => {
-            const chartData = await this.dataProcessor.getChartCompatibleData(this.currentPeriod);
+            const chartData = await this.duckDBProcessor.getChartCompatibleData(this.currentPeriod);
             this.chartManager.updateUsageChart(chartData);
         });
 
@@ -230,11 +226,10 @@ class AppState {
             await this.settingsManager.autoFetchExchangeRateIfNeeded();
             
             // キャッシュをクリア
-            this.dataProcessor.clearCache();
             this.duckDBProcessor.clearCache();
             
-            // チャートデータを一括取得（DuckDB優先、フォールバック付き）
-            const chartData = await this.getChartDataWithFallback(this.currentPeriod);
+            // チャートデータを一括取得（DuckDB統一処理）
+            const chartData = await this.duckDBProcessor.getChartCompatibleData(this.currentPeriod);
             
             // 自動更新またはサイレント更新の場合はスムーズな更新を実行
             if (silent || isAutoUpdate) {
@@ -331,7 +326,7 @@ class AppState {
     // 非同期ダッシュボード更新
     async updateDashboardAsync() {
         try {
-            const chartData = await this.getChartDataWithFallback(this.currentPeriod);
+            const chartData = await this.duckDBProcessor.getChartCompatibleData(this.currentPeriod);
             this.updateDashboardWithData(chartData);
             this.hidePeriodChangeLoading();
         } catch (error) {
@@ -340,26 +335,13 @@ class AppState {
         }
     }
 
-    // DuckDB優先、フォールバック付きデータ取得
-    async getChartDataWithFallback(period) {
-        try {
-            console.log('🦆 DuckDBでデータ取得を試行中...');
-            const chartData = await this.duckDBProcessor.getChartCompatibleData(period);
-            console.log('🦆 DuckDBによるデータ取得成功');
-            return chartData;
-        } catch (error) {
-            console.warn('🦆 DuckDBによるデータ取得に失敗、フォールバックします:', error);
-            console.log('📊 AdvancedLogDataProcessorを使用');
-            return await this.dataProcessor.getChartCompatibleData(period);
-        }
-    }
 
     // フィルタリングは不要（AdvancedLogDataProcessorで処理）
 
-    // ダッシュボードを更新（統一された計算方式）
+    // ダッシュボードを更新（DuckDB統一処理）
     async updateDashboard() {
-        // DuckDB優先でデータ取得して更新
-        const chartData = await this.getChartDataWithFallback(this.currentPeriod);
+        // DuckDBでデータ取得して更新
+        const chartData = await this.duckDBProcessor.getChartCompatibleData(this.currentPeriod);
         this.updateDashboardWithData(chartData);
     }
     
@@ -398,8 +380,8 @@ class AppState {
     
     // サイレント更新（チカチカを防ぐ）
     async updateDashboardSilent() {
-        // DuckDB優先でデータ取得して更新
-        const chartData = await this.getChartDataWithFallback(this.currentPeriod);
+        // DuckDBでデータ取得して更新
+        const chartData = await this.duckDBProcessor.getChartCompatibleData(this.currentPeriod);
         this.updateDashboardSilentWithData(chartData);
     }
     
@@ -581,7 +563,7 @@ class AppState {
             const hasRealCost = safeStats.costUSD > 0;
             const costValue = hasRealCost ? 
                 Utils.formatCurrency(safeStats.costJPY) : 
-                Utils.formatCurrency(this.dataProcessor.estimateCost(safeStats.inputTokens, safeStats.outputTokens).jpy);
+                Utils.formatCurrency(this.duckDBProcessor.estimateCost(safeStats.inputTokens, safeStats.outputTokens).jpy);
             
             const costLabel = hasRealCost ? 
                 periodConfig.card2.label : 
@@ -691,7 +673,7 @@ class AppState {
     // 洞察を更新
     async updateInsights() {
         try {
-            const chartData = await this.getChartDataWithFallback(this.currentPeriod);
+            const chartData = await this.duckDBProcessor.getChartCompatibleData(this.currentPeriod);
             this.updateInsightsWithData(chartData);
         } catch (error) {
             console.error('洞察更新エラー:', error);

@@ -73,22 +73,22 @@ class ChartManager {
         
         switch (chartType) {
             case 'tokens':
-                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens || d) : [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens) : [];
                 label = 'トークン数';
                 color = '#3b82f6';
                 break;
             case 'cost':
-                data = Array.isArray(dailyData) ? dailyData.map(d => d.cost || 0) : [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.cost) : [];
                 label = 'コスト (¥)';
                 color = '#10b981';
                 break;
             case 'calls':
-                data = Array.isArray(dailyData) ? dailyData.map(d => d.calls || 1) : [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.calls) : [];
                 label = 'API呼び出し数';
                 color = '#f59e0b';
                 break;
             default:
-                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens || d) : [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens) : [];
                 label = 'トークン数';
                 color = '#3b82f6';
         }
@@ -172,23 +172,22 @@ class ChartManager {
         let data, label, color;
         switch (chartType) {
             case 'tokens':
-                // DuckDB形式とAdvancedLogDataProcessor形式の両方に対応
-                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens || d) : [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens) : [];
                 label = 'トークン数';
                 color = '#3b82f6';
                 break;
             case 'cost':
-                data = Array.isArray(dailyData) ? dailyData.map(d => d.cost || 0) : [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.cost) : [];
                 label = 'コスト (¥)';
                 color = '#10b981';
                 break;
             case 'calls':
-                data = Array.isArray(dailyData) ? dailyData.map(d => d.calls || 1) : [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.calls) : [];
                 label = 'API呼び出し数';
                 color = '#f59e0b';
                 break;
             default:
-                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens || d) : [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens) : [];
                 label = 'トークン数';
                 color = '#3b82f6';
         }

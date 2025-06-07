@@ -3,24 +3,15 @@
  * カレンダー描画、日付選択、日別統計表示、プロジェクト別チャート管理を行う
  */
 class CalendarManager {
-    constructor(dataProcessor, settings) {
-        this.dataProcessor = dataProcessor;
-        this.duckDBProcessor = null; // DuckDBプロセッサーは後で設定
+    constructor(duckDBProcessor, settings) {
+        this.duckDBProcessor = duckDBProcessor;
         this.settings = settings;
         this.currentDate = new Date();
         this.selectedDate = null;
         this.charts = {};
         this.dailyDataCache = new Map(); // 日別データキャッシュ
         
-        console.log('CalendarManager initialized with dataProcessor:', !!dataProcessor, 'settings:', !!settings);
-    }
-
-    /**
-     * DuckDBプロセッサーを設定
-     */
-    setDuckDBProcessor(duckDBProcessor) {
-        this.duckDBProcessor = duckDBProcessor;
-        console.log('CalendarManager: DuckDBProcessor set');
+        console.log('CalendarManager initialized with DuckDBProcessor:', !!duckDBProcessor, 'settings:', !!settings);
     }
 
     /**
@@ -31,7 +22,7 @@ class CalendarManager {
     }
 
     /**
-     * 日別データを取得（AdvancedLogDataProcessor使用）
+     * 日別データを取得（DuckDB使用）
      */
     async getDailyUsageData() {
         if (this.dailyDataCache.has('all')) {
@@ -39,33 +30,32 @@ class CalendarManager {
         }
 
         try {
-            // AdvancedLogDataProcessorから日別統計を取得
-            if (this.dataProcessor && this.dataProcessor.calculateAllDailyStats) {
-                console.log('📅 CalendarManager: AdvancedLogDataProcessorで日別統計取得');
-                const dailyStats = await this.dataProcessor.calculateAllDailyStats();
-                
-                // データ構造を変換（AdvancedLogDataProcessor → CalendarManager形式）
-                const convertedData = new Map();
-                for (const [dateKey, stats] of dailyStats) {
-                    convertedData.set(dateKey, {
-                        totalTokens: (stats.inputTokens || 0) + (stats.outputTokens || 0),
-                        costJPY: stats.costJPY || 0,
-                        costUSD: stats.costUSD || 0,
-                        calls: stats.entries || 0,
-                        inputTokens: stats.inputTokens || 0,
-                        outputTokens: stats.outputTokens || 0
+            console.log('📅 CalendarManager: DuckDBで日別統計取得');
+            // DuckDBから全期間のチャートデータを取得
+            const chartData = await this.duckDBProcessor.getChartCompatibleData('all');
+            
+            // dailyDataを日別マップに変換
+            const convertedData = new Map();
+            if (chartData && chartData.dailyData) {
+                chartData.dailyData.forEach(dayData => {
+                    convertedData.set(dayData.date, {
+                        totalTokens: dayData.tokens || 0,
+                        costJPY: dayData.cost || 0,
+                        costUSD: (dayData.cost || 0) / 150, // JPYからUSDに概算変換
+                        calls: dayData.calls || 0,
+                        inputTokens: Math.round((dayData.tokens || 0) * 0.3), // 概算（30%が入力）
+                        outputTokens: Math.round((dayData.tokens || 0) * 0.7) // 概算（70%が出力）
                     });
-                }
-                
-                this.dailyDataCache.set('all', convertedData);
-                return convertedData;
+                });
             }
+            
+            this.dailyDataCache.set('all', convertedData);
+            return convertedData;
+            
         } catch (error) {
-            console.error('📅 CalendarManager: データ取得エラー:', error);
+            console.error('📅 CalendarManager: DuckDBデータ取得エラー:', error);
+            return new Map();
         }
-
-        console.error('📅 CalendarManager: データプロセッサーが利用できません');
-        return new Map();
     }
 
     /**
@@ -78,6 +68,17 @@ class CalendarManager {
             return `${(tokens / 1000).toFixed(1)}K`;
         }
         return tokens.toString();
+    }
+
+    /**
+     * 使用量レベルを計算（0-4の5段階）
+     */
+    getUsageLevel(tokens) {
+        if (tokens === 0) return 0;
+        if (tokens <= 1000) return 1;
+        if (tokens <= 5000) return 2;
+        if (tokens <= 20000) return 3;
+        return 4;
     }
 
     /**
@@ -166,7 +167,7 @@ class CalendarManager {
             dayElement.appendChild(dayUsageElement);
 
             // 使用量レベルに応じてクラスを追加
-            const level = this.dataProcessor.getUsageLevel(dailyData.totalTokens);
+            const level = this.getUsageLevel(dailyData.totalTokens);
             dayElement.classList.add(`level-${level}`);
             dayElement.classList.add('has-usage');
         } else {
@@ -250,61 +251,14 @@ class CalendarManager {
     }
 
     /**
-     * 選択日のプロジェクト別チャートを更新
+     * 選択日のプロジェクト別チャートを更新（簡略化版）
      */
     updateDailyProjectChart(date) {
-        // ローカル日付キーを生成
-        const year = date.getFullYear();
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const day = date.getDate().toString().padStart(2, '0');
-        const dateKey = `${year}-${month}-${day}`;
-        const dayEntries = this.dataProcessor.getAllLogEntries().filter(entry => {
-            return entry.timestamp && typeof entry.timestamp === 'string' && entry.timestamp.startsWith(dateKey);
-        });
-
-        if (dayEntries.length === 0) {
-            this.clearDailyProjectChart();
-            return;
-        }
-
-        const projectData = this.dataProcessor.aggregateDataByProject(dayEntries);
-        const ctx = document.getElementById('dailyProjectChart').getContext('2d');
+        // 現在は簡略化のため、プロジェクト別データは表示しない
+        this.clearDailyProjectChart();
         
-        if (this.charts.dailyProject) {
-            this.charts.dailyProject.destroy();
-        }
-
-        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
-
-        this.charts.dailyProject = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: projectData.map(d => d.project),
-                datasets: [{
-                    data: projectData.map(d => d.totalTokens),
-                    backgroundColor: colors.slice(0, projectData.length),
-                    borderColor: this.settings.darkMode ? '#1e293b' : '#ffffff',
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b',
-                            usePointStyle: true,
-                            padding: 10,
-                            font: {
-                                size: 11
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        // TODO: 将来的にDuckDBから特定日のプロジェクト別データを取得する機能を追加
+        console.log('📅 プロジェクト別チャート（簡略化版）:', date);
     }
 
     /**
