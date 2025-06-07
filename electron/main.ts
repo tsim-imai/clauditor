@@ -6,6 +6,7 @@ import { createReadStream, existsSync, readdirSync } from 'fs';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import chokidar from 'chokidar';
+// import Database from 'duckdb'; // 一時的に無効化
 // Type definitions
 interface ProjectInfo {
   name: string;
@@ -36,6 +37,7 @@ console.log('__dirname:', __dirname);
 
 let mainWindow: BrowserWindow | null = null;
 let fileWatcher: chokidar.FSWatcher | null = null;
+let duckDB: any | null = null; // 一時的に型を変更
 
 // Simple cache for file contents and metadata
 interface CacheEntry {
@@ -47,6 +49,60 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// DuckDB initialization (一時的に無効化)
+const initializeDuckDB = (): Promise<any> => {
+  return Promise.reject(new Error('DuckDB は現在無効化されています'));
+};
+
+// Execute DuckDB query via child_process (test.shアプローチ)
+const executeDuckDBQuery = async (query: string): Promise<any[]> => {
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+  
+  try {
+    console.log('🦆 Executing DuckDB query via CLI...');
+    // JSON出力を強制するために-jsonフラグを使用
+    const command = `duckdb -json -c "${query.replace(/"/g, '\\"')}"`;
+    const { stdout, stderr } = await execAsync(command);
+    
+    if (stderr) {
+      console.warn('DuckDB Warning:', stderr);
+    }
+    
+    // JSON出力をパース
+    if (!stdout.trim()) {
+      console.log('🦆 DuckDB CLI: 空の結果');
+      return [];
+    }
+    
+    try {
+      // DuckDBの-jsonオプションは配列形式で出力される
+      // 改行で分割された不完全なJSONを結合
+      const fullJsonString = stdout.trim();
+      console.log(`🦆 Debug: Full JSON string length: ${fullJsonString.length}`);
+      console.log(`🦆 Debug: First 200 chars: "${fullJsonString.substring(0, 200)}"`);
+      
+      const data = JSON.parse(fullJsonString);
+      
+      // 配列でない場合は配列に変換
+      const resultArray = Array.isArray(data) ? data : [data];
+      
+      console.log(`🦆 DuckDB CLI query completed: ${resultArray.length} rows returned`);
+      return resultArray;
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      console.log('Raw stdout length:', stdout.length);
+      console.log('Raw stdout (first 500 chars):', stdout.substring(0, 500));
+      return [];
+    }
+    
+  } catch (error) {
+    console.error('DuckDB CLI Error:', error);
+    throw new Error(`DuckDB CLI実行に失敗しました: ${error.message}`);
+  }
+};
 
 // Generate simple checksum for cache validation
 const generateChecksum = (data: any): string => {
@@ -591,6 +647,19 @@ ipcMain.handle('get-file-watcher-status', async () => {
     dirExists,
     watcherReady: fileWatcher ? true : false
   };
+});
+
+// Execute DuckDB query
+ipcMain.handle('execute-duckdb-query', async (event, query: string) => {
+  try {
+    console.log('🦆 Executing DuckDB query:', query.substring(0, 100) + '...');
+    const result = await executeDuckDBQuery(query);
+    console.log(`🦆 DuckDB query completed: ${result.length} rows returned`);
+    return result;
+  } catch (error) {
+    console.error('🦆 DuckDB query failed:', error);
+    throw error;
+  }
 });
 
 // Test file watcher by creating a test file

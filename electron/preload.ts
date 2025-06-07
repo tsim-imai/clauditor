@@ -61,4 +61,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Test file watcher
   testFileWatcher: () =>
     ipcRenderer.invoke('test-file-watcher'),
+
+  // DuckDB query execution
+  executeDuckDBQuery: (query: string) =>
+    ipcRenderer.invoke('execute-duckdb-query', query),
 });
