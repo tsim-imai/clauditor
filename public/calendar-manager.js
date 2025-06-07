@@ -5,12 +5,22 @@
 class CalendarManager {
     constructor(dataProcessor, settings) {
         this.dataProcessor = dataProcessor;
+        this.duckDBProcessor = null; // DuckDBプロセッサーは後で設定
         this.settings = settings;
         this.currentDate = new Date();
         this.selectedDate = null;
         this.charts = {};
+        this.dailyDataCache = new Map(); // 日別データキャッシュ
         
         console.log('CalendarManager initialized with dataProcessor:', !!dataProcessor, 'settings:', !!settings);
+    }
+
+    /**
+     * DuckDBプロセッサーを設定
+     */
+    setDuckDBProcessor(duckDBProcessor) {
+        this.duckDBProcessor = duckDBProcessor;
+        console.log('CalendarManager: DuckDBProcessor set');
     }
 
     /**
@@ -18,6 +28,56 @@ class CalendarManager {
      */
     updateSettings(settings) {
         this.settings = settings;
+    }
+
+    /**
+     * 日別データを取得（AdvancedLogDataProcessor使用）
+     */
+    async getDailyUsageData() {
+        if (this.dailyDataCache.has('all')) {
+            return this.dailyDataCache.get('all');
+        }
+
+        try {
+            // AdvancedLogDataProcessorから日別統計を取得
+            if (this.dataProcessor && this.dataProcessor.calculateAllDailyStats) {
+                console.log('📅 CalendarManager: AdvancedLogDataProcessorで日別統計取得');
+                const dailyStats = await this.dataProcessor.calculateAllDailyStats();
+                
+                // データ構造を変換（AdvancedLogDataProcessor → CalendarManager形式）
+                const convertedData = new Map();
+                for (const [dateKey, stats] of dailyStats) {
+                    convertedData.set(dateKey, {
+                        totalTokens: (stats.inputTokens || 0) + (stats.outputTokens || 0),
+                        costJPY: stats.costJPY || 0,
+                        costUSD: stats.costUSD || 0,
+                        calls: stats.entries || 0,
+                        inputTokens: stats.inputTokens || 0,
+                        outputTokens: stats.outputTokens || 0
+                    });
+                }
+                
+                this.dailyDataCache.set('all', convertedData);
+                return convertedData;
+            }
+        } catch (error) {
+            console.error('📅 CalendarManager: データ取得エラー:', error);
+        }
+
+        console.error('📅 CalendarManager: データプロセッサーが利用できません');
+        return new Map();
+    }
+
+    /**
+     * トークン数をフォーマット
+     */
+    formatTokens(tokens) {
+        if (tokens >= 1000000) {
+            return `${(tokens / 1000000).toFixed(1)}M`;
+        } else if (tokens >= 1000) {
+            return `${(tokens / 1000).toFixed(1)}K`;
+        }
+        return tokens.toString();
     }
 
     /**
@@ -44,7 +104,7 @@ class CalendarManager {
     /**
      * カレンダーを描画
      */
-    renderCalendar() {
+    async renderCalendar() {
         console.log('CalendarManager.renderCalendar called, currentDate:', this.currentDate);
         const year = this.currentDate.getFullYear();
         const month = this.currentDate.getMonth();
@@ -68,7 +128,7 @@ class CalendarManager {
                 const currentDate = new Date(startDate);
                 currentDate.setDate(startDate.getDate() + (week * 7) + day);
                 
-                const dayElement = this.createCalendarDay(currentDate, month);
+                const dayElement = await this.createCalendarDay(currentDate, month);
                 calendarDays.appendChild(dayElement);
             }
         }
@@ -77,7 +137,7 @@ class CalendarManager {
     /**
      * カレンダーの日付セルを作成
      */
-    createCalendarDay(date, currentMonth) {
+    async createCalendarDay(date, currentMonth) {
         const dayElement = document.createElement('div');
         dayElement.className = 'calendar-day';
         
@@ -89,7 +149,8 @@ class CalendarManager {
         const dayNumber = date.getDate();
         const isCurrentMonth = date.getMonth() === currentMonth;
         const isToday = this.isToday(date);
-        const dailyData = this.dataProcessor.getDailyUsageData().get(dateKey);
+        const dailyUsageData = await this.getDailyUsageData();
+        const dailyData = dailyUsageData.get(dateKey);
 
         // 日付番号
         const dayNumberElement = document.createElement('div');
@@ -101,7 +162,7 @@ class CalendarManager {
         if (dailyData && dailyData.totalTokens > 0) {
             const dayUsageElement = document.createElement('div');
             dayUsageElement.className = 'day-usage';
-            dayUsageElement.textContent = this.dataProcessor.formatTokens(dailyData.totalTokens);
+            dayUsageElement.textContent = this.formatTokens(dailyData.totalTokens);
             dayElement.appendChild(dayUsageElement);
 
             // 使用量レベルに応じてクラスを追加
@@ -134,7 +195,7 @@ class CalendarManager {
     /**
      * 日付を選択
      */
-    selectDate(date) {
+    async selectDate(date) {
         this.selectedDate = date;
         
         // 選択状態を更新
@@ -144,20 +205,21 @@ class CalendarManager {
         event.target.closest('.calendar-day').classList.add('selected');
 
         // サイドバーを更新
-        this.updateSelectedDateInfo(date);
-        this.renderCalendar(); // カレンダーを再描画して選択状態を反映
+        await this.updateSelectedDateInfo(date);
+        await this.renderCalendar(); // カレンダーを再描画して選択状態を反映
     }
 
     /**
      * 選択された日付の情報を更新
      */
-    updateSelectedDateInfo(date) {
+    async updateSelectedDateInfo(date) {
         // ローカル日付キーを生成
         const year = date.getFullYear();
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
         const day = date.getDate().toString().padStart(2, '0');
         const dateKey = `${year}-${month}-${day}`;
-        const dailyData = this.dataProcessor.getDailyUsageData().get(dateKey);
+        const dailyUsageData = await this.getDailyUsageData();
+        const dailyData = dailyUsageData.get(dateKey);
         
         // タイトルを更新
         const dateTitle = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
@@ -265,33 +327,36 @@ class CalendarManager {
     /**
      * 前月に移動
      */
-    goToPreviousMonth() {
+    async goToPreviousMonth() {
         this.currentDate.setMonth(this.currentDate.getMonth() - 1);
-        this.renderCalendar();
+        await this.renderCalendar();
     }
 
     /**
      * 次月に移動
      */
-    goToNextMonth() {
+    async goToNextMonth() {
         this.currentDate.setMonth(this.currentDate.getMonth() + 1);
-        this.renderCalendar();
+        await this.renderCalendar();
     }
 
     /**
      * 今日に移動
      */
-    goToToday() {
+    async goToToday() {
         this.currentDate = new Date();
-        this.renderCalendar();
+        await this.renderCalendar();
     }
 
     /**
      * カレンダーデータを更新（データ更新時に呼び出し）
      */
-    refresh() {
+    async refresh() {
+        // キャッシュをクリア
+        this.dailyDataCache.clear();
+        
         if (this.isVisible()) {
-            this.renderCalendar();
+            await this.renderCalendar();
         }
     }
 

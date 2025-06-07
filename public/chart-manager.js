@@ -63,37 +63,42 @@ class ChartManager {
      */
     updateUsageChartSilentWithCache(chartData) {
         if (!this.charts.usage) return;
-        if (!chartData) return;
+        if (!chartData || !chartData.dailyData) return;
         
         const chartType = document.getElementById('usageChartType').value;
         let data, label, color;
         
-        // DuckDBプロセッサーのデータ構造に対応
+        // 統一されたデータ構造に対応
+        const dailyData = chartData.dailyData;
+        
         switch (chartType) {
             case 'tokens':
-                data = chartData.dailyData || [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens || d) : [];
                 label = 'トークン数';
                 color = '#3b82f6';
                 break;
             case 'cost':
-                data = chartData.dailyCosts || [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.cost || 0) : [];
                 label = 'コスト (¥)';
                 color = '#10b981';
                 break;
             case 'calls':
-                // DuckDBではAPI呼び出し数はエントリ数として扱う
-                data = chartData.dailyData ? chartData.dailyData.map(() => 1) : [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.calls || 1) : [];
                 label = 'API呼び出し数';
                 color = '#f59e0b';
                 break;
             default:
-                data = chartData.dailyData || [];
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens || d) : [];
                 label = 'トークン数';
                 color = '#3b82f6';
         }
         
-        // ラベルはdailyLabelsから取得
-        this.charts.usage.data.labels = chartData.dailyLabels || [];
+        // ラベルの生成
+        const labels = Array.isArray(dailyData) ? 
+            dailyData.map(d => d.date ? Utils.formatDate(d.date) : '') : 
+            [];
+        
+        this.charts.usage.data.labels = labels;
         this.charts.usage.data.datasets[0].data = data;
         this.charts.usage.data.datasets[0].label = label;
         this.charts.usage.data.datasets[0].borderColor = color;
@@ -155,33 +160,48 @@ class ChartManager {
             this.charts.usage.destroy();
         }
 
-        // 高精度データを使用
+        // データ構造の検証とフォールバック
+        if (!chartData || !chartData.dailyData) {
+            console.warn('⚠️ チャートデータが不正です:', chartData);
+            return;
+        }
+
         const dailyData = chartData.dailyData;
         const chartType = document.getElementById('usageChartType').value;
 
         let data, label, color;
         switch (chartType) {
             case 'tokens':
-                data = dailyData.map(d => d.tokens);
+                // DuckDB形式とAdvancedLogDataProcessor形式の両方に対応
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens || d) : [];
                 label = 'トークン数';
                 color = '#3b82f6';
                 break;
             case 'cost':
-                data = dailyData.map(d => d.cost);
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.cost || 0) : [];
                 label = 'コスト (¥)';
                 color = '#10b981';
                 break;
             case 'calls':
-                data = dailyData.map(d => d.calls);
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.calls || 1) : [];
                 label = 'API呼び出し数';
                 color = '#f59e0b';
                 break;
+            default:
+                data = Array.isArray(dailyData) ? dailyData.map(d => d.tokens || d) : [];
+                label = 'トークン数';
+                color = '#3b82f6';
         }
+
+        // ラベルの生成（日付）
+        const labels = Array.isArray(dailyData) ? 
+            dailyData.map(d => d.date ? Utils.formatDate(d.date) : '') : 
+            [];
 
         this.charts.usage = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: dailyData.map(d => Utils.formatDate(d.date)),
+                labels: labels,
                 datasets: [{
                     label: label,
                     data: data,
@@ -468,6 +488,13 @@ class ChartManager {
      */
     updateUsageChart(filteredEntries) {
         this.createUsageChart(filteredEntries);
+    }
+
+    /**
+     * チャートの存在を確認
+     */
+    hasChart(chartName) {
+        return this.charts[chartName] && this.charts[chartName] !== null;
     }
 
     /**

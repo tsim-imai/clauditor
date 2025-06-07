@@ -244,7 +244,7 @@ class AppState {
             }
             
             if (this.currentView === 'calendar') {
-                this.calendarManager.refresh();
+                await this.calendarManager.refresh();
             }
             
             // 最小ウィンドウモードの場合は更新
