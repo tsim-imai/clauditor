@@ -105,7 +105,8 @@ class AppState {
             this.updateDashboardSilentForCurrentPeriod();
         }, 30000); // 30秒間隔
 
-        // データを読み込み
+        // キャッシュをクリアしてからデータを読み込み
+        this.duckDBProcessor.clearCache();
         await this.refreshData();
     }
 
@@ -116,6 +117,8 @@ class AppState {
 
         // リフレッシュボタン
         document.getElementById('refreshButton').addEventListener('click', () => {
+            console.log('🔄 手動リフレッシュ実行 - キャッシュクリア');
+            this.duckDBProcessor.clearCache();
             this.refreshData();
         });
 
@@ -179,11 +182,20 @@ class AppState {
             this.refreshData();
         });
 
+        // 年選択ボタン
+        document.getElementById('prevYearBtn').addEventListener('click', () => {
+            this.changeYear(-1);
+        });
+        
+        document.getElementById('nextYearBtn').addEventListener('click', () => {
+            this.changeYear(1);
+        });
+
         // 月選択ボタン
         document.querySelectorAll('.month-filter-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                const offset = parseInt(btn.dataset.offset);
-                this.setMonthOffset(offset);
+                const month = parseInt(btn.dataset.month);
+                this.setSelectedMonth(month);
             });
         });
     }
@@ -264,6 +276,7 @@ class AppState {
 
     // 時間期間を設定（最適化版）
     async setTimePeriod(period) {
+        console.log('🔄 期間変更:', period, 'からのアクティブ時間デバッグ開始');
         
         this.currentPeriod = period;
         
@@ -278,13 +291,15 @@ class AppState {
         
         if (fastCached && Date.now() - fastCached.timestamp < this.duckDBProcessor.fastCacheTime) {
             // キャッシュヒット: 即座に更新
-            console.log(`⚡ 高速期間切り替え: ${period}`);
+            console.log(`⚡ 高速期間切り替え: ${period} (キャッシュ使用)`);
+            console.log('📊 キャッシュデータのactiveHours:', fastCached.data.activeHours);
             this.updateDashboardSilentWithData(fastCached.data);
             
             // バックグラウンドで最新データ確認（必要に応じて更新）
             setTimeout(() => this.refreshPeriodDataBackground(period), 100);
         } else {
             // キャッシュミス: 通常のローディング処理
+            console.log(`🔄 期間切り替え: ${period} (新規取得)`);
             this.showPeriodChangeLoading();
             await this.updateDashboardAsync();
         }
@@ -481,7 +496,7 @@ class AppState {
             this.updateStatCard(3, {
                 icon: periodConfig.card3.icon,
                 label: periodConfig.card3.label,
-                value: actualActiveHours.toFixed(1),
+                value: (actualActiveHours || 0).toFixed(1),
                 unit: 'hours'
             });
             
@@ -534,15 +549,19 @@ class AppState {
             };
             
             // activeHoursを正しく取得（chartDataの直接プロパティとして渡される）
-            const activeHours = chartData.activeHours || 0;
+            const activeHours = chartData.activeHours;
             
             console.log('📊 updateStatsOverviewWithData受信データ:', {
                 chartData: {
                     stats: chartData.stats,
-                    activeHours: chartData.activeHours
+                    activeHours: chartData.activeHours,
+                    activeDays: chartData.activeDays
                 },
                 extractedStats: periodStats,
-                extractedActiveHours: activeHours
+                extractedActiveHours: activeHours,
+                activeHoursType: typeof activeHours,
+                chartDataKeys: Object.keys(chartData),
+                currentPeriod: this.currentPeriod
             });
             
             this.updateStatsDisplay(periodStats, activeHours);
@@ -586,9 +605,22 @@ class AppState {
             };
             
             // アクティブ時間の計算
-            const actualActiveHours = preCalculatedActiveHours !== null && preCalculatedActiveHours !== undefined ? 
-                preCalculatedActiveHours : 
-                0; // fallback
+            let actualActiveHours = 0;
+            console.log('📊 preCalculatedActiveHours値確認:', {
+                value: preCalculatedActiveHours,
+                type: typeof preCalculatedActiveHours,
+                isNull: preCalculatedActiveHours === null,
+                isUndefined: preCalculatedActiveHours === undefined,
+                isNaN: isNaN(preCalculatedActiveHours)
+            });
+            
+            if (preCalculatedActiveHours !== null && preCalculatedActiveHours !== undefined && !isNaN(preCalculatedActiveHours)) {
+                actualActiveHours = preCalculatedActiveHours;
+                console.log('📊 アクティブ時間設定成功:', actualActiveHours);
+            } else {
+                console.warn('📊 preCalculatedActiveHours is invalid:', preCalculatedActiveHours, 'using fallback 0');
+                actualActiveHours = 0;
+            }
             
             // 統計カードを更新
             this.updateStatCard(1, {
@@ -618,7 +650,7 @@ class AppState {
             this.updateStatCard(3, {
                 icon: periodConfig.card3.icon,
                 label: periodConfig.card3.label,
-                value: actualActiveHours.toFixed(1),
+                value: (actualActiveHours || 0).toFixed(1),
                 unit: 'hours'
             });
             
@@ -841,24 +873,30 @@ class AppState {
             monthFilterBar.classList.remove('hidden');
             mainContainer.classList.add('with-filter-bar');
             
-            // 初期状態で「今月」をアクティブにして今日を選択
-            this.setActiveMonthButton(0);
+            // 初期状態で現在年月をアクティブにして今日を選択
+            const now = new Date();
+            this.calendarManager.setYear(now.getFullYear());
+            this.calendarManager.setMonth(now.getMonth() + 1);
             this.calendarManager.renderCalendar();
         }
     }
 
-    // 月選択を設定
-    setMonthOffset(offset) {
-        this.setActiveMonthButton(offset);
-        this.calendarManager.setMonthOffset(offset);
+    // 年を変更
+    changeYear(delta) {
+        const newYear = this.calendarManager.selectedYear + delta;
+        this.calendarManager.setYear(newYear);
         this.calendarManager.renderCalendar();
     }
 
-    // アクティブな月ボタンを設定
-    setActiveMonthButton(offset) {
-        document.querySelectorAll('.month-filter-btn').forEach(btn => {
-            btn.classList.toggle('active', parseInt(btn.dataset.offset) === offset);
-        });
+    // 月を設定
+    setSelectedMonth(month) {
+        this.calendarManager.setMonth(month);
+        this.calendarManager.renderCalendar();
+    }
+
+    // アクティブな月ボタンを設定（CalendarManagerで処理）
+    setActiveMonthButton(month) {
+        this.calendarManager.updateMonthButtons();
     }
 
 

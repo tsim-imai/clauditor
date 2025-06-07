@@ -439,6 +439,16 @@ class DuckDBDataProcessor {
 
             // データを処理してChart.js互換形式に変換
             const actualActiveHours = activeHoursData && activeHoursData[0] ? activeHoursData[0].active_hours : 0;
+            
+            console.log('📊 DuckDB Active Hours Debug:', {
+                period,
+                activeHoursData,
+                actualActiveHours,
+                statsData: statsData[0],
+                activeHoursType: typeof actualActiveHours,
+                activeHoursValue: actualActiveHours
+            });
+            
             const chartData = this.formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, statsData[0], period, aggregationUnit, actualActiveHours, comparisonData, comparisonPeriod);
             
             // 両方のキャッシュに保存
@@ -488,7 +498,9 @@ class DuckDBDataProcessor {
             projectDataLength: projectData?.length,
             statsExists: !!stats,
             period,
-            unit
+            unit,
+            actualActiveHours,
+            actualActiveHoursType: typeof actualActiveHours
         });
         // 24時間の配列を初期化（hourlyChart用）
         const hourlyTokens = new Array(24).fill(0);
@@ -603,7 +615,7 @@ class DuckDBDataProcessor {
             },
             
             // アクティブ時間（実際に使用された時間帯の数）
-            activeHours: actualActiveHours !== null ? actualActiveHours : totalStats.activeHours,
+            activeHours: actualActiveHours !== null && actualActiveHours !== undefined ? actualActiveHours : totalStats.activeHours,
             
             // アクティブ日数（実際に使用した日数）
             activeDays: totalStats.activeDays,

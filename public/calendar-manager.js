@@ -7,7 +7,11 @@ class CalendarManager {
         this.duckDBProcessor = duckDBProcessor;
         this.settings = settings;
         this.currentDate = new Date();
-        this.monthOffset = 0; // 月オフセット（0=今月, -1=先月, etc）
+        
+        // 年・月選択システム
+        const now = new Date();
+        this.selectedYear = now.getFullYear();
+        this.selectedMonth = now.getMonth() + 1; // 1-12
         
         // デフォルトで今日を選択
         const today = new Date();
@@ -17,6 +21,7 @@ class CalendarManager {
         this.dailyDataCache = new Map(); // 日別データキャッシュ
         
         console.log('CalendarManager initialized with DuckDBProcessor:', !!duckDBProcessor, 'settings:', !!settings);
+        console.log('選択年月:', this.selectedYear, this.selectedMonth);
         console.log('デフォルト選択日:', this.selectedDate);
     }
 
@@ -28,19 +33,46 @@ class CalendarManager {
     }
 
     /**
-     * 月オフセットを設定
+     * 年を設定
      */
-    setMonthOffset(offset) {
-        this.monthOffset = offset;
+    setYear(year) {
+        this.selectedYear = year;
+        this.updateYearDisplay();
+    }
+
+    /**
+     * 月を設定
+     */
+    setMonth(month) {
+        this.selectedMonth = month;
+        this.updateMonthButtons();
+    }
+
+    /**
+     * 年表示を更新
+     */
+    updateYearDisplay() {
+        const yearDisplay = document.getElementById('currentYearDisplay');
+        if (yearDisplay) {
+            yearDisplay.textContent = this.selectedYear;
+        }
+    }
+
+    /**
+     * 月ボタンの状態を更新
+     */
+    updateMonthButtons() {
+        document.querySelectorAll('.month-filter-btn').forEach(btn => {
+            const btnMonth = parseInt(btn.dataset.month);
+            btn.classList.toggle('active', btnMonth === this.selectedMonth);
+        });
     }
 
     /**
      * 表示対象の月を取得
      */
     getDisplayMonth() {
-        const now = new Date();
-        const displayDate = new Date(now.getFullYear(), now.getMonth() + this.monthOffset, 1);
-        return displayDate;
+        return new Date(this.selectedYear, this.selectedMonth - 1, 1);
     }
 
     /**
@@ -66,7 +98,8 @@ class CalendarManager {
                         costUSD: (dayData.cost || 0) / 150, // JPYからUSDに概算変換
                         calls: dayData.calls || 0,
                         inputTokens: Math.round((dayData.tokens || 0) * 0.3), // 概算（30%が入力）
-                        outputTokens: Math.round((dayData.tokens || 0) * 0.7) // 概算（70%が出力）
+                        outputTokens: Math.round((dayData.tokens || 0) * 0.7), // 概算（70%が出力）
+                        activeHoursCount: 0 // 正確なアクティブ時間は選択時にDuckDBクエリで取得
                     });
                 });
             }
@@ -104,6 +137,39 @@ class CalendarManager {
     }
 
     /**
+     * 特定日付の正確なアクティブ時間を取得（DuckDBクエリ）
+     */
+    async getDateActiveHours(dateKey) {
+        try {
+            console.log('📅 特定日付のアクティブ時間取得:', dateKey);
+            
+            // DuckDBクエリで特定日付のユニークな時間帯数を取得
+            const query = `
+                SELECT 
+                    COUNT(DISTINCT HOUR(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')) as active_hours
+                FROM read_json('${this.duckDBProcessor.getProjectsPath()}/**/*.jsonl', ignore_errors=true)
+                WHERE timestamp IS NOT NULL 
+                  AND DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') = '${dateKey}'
+            `;
+            
+            const result = await this.duckDBProcessor.executeDuckDBQuery(query);
+            
+            if (result && result.length > 0 && result[0].active_hours !== null) {
+                const activeHours = result[0].active_hours;
+                console.log('📅 特定日付アクティブ時間取得成功:', dateKey, '→', activeHours, 'hours');
+                return activeHours;
+            } else {
+                console.warn('📅 特定日付のアクティブ時間データなし:', dateKey);
+                return 0;
+            }
+            
+        } catch (error) {
+            console.error('📅 特定日付アクティブ時間取得エラー:', dateKey, error);
+            return 0;
+        }
+    }
+
+    /**
      * 現在の日付を設定
      */
     setCurrentDate(date) {
@@ -128,16 +194,20 @@ class CalendarManager {
      * カレンダーを描画
      */
     async renderCalendar() {
-        console.log('CalendarManager.renderCalendar called, monthOffset:', this.monthOffset);
+        console.log('CalendarManager.renderCalendar called, 選択年月:', this.selectedYear, this.selectedMonth);
         
         // 表示対象月を取得
         const displayMonth = this.getDisplayMonth();
         const year = displayMonth.getFullYear();
         const month = displayMonth.getMonth();
         
-        // カレンダータイトルを更新
-        document.getElementById('calendarTitle').textContent = 
-            `${year}年${month + 1}月`;
+        // 年・月表示を更新
+        this.updateYearDisplay();
+        this.updateMonthButtons();
+        
+        // カレンダータイトルは不要（年・月選択バーに移行）
+        // document.getElementById('calendarTitle').textContent = 
+        //     `${year}年${month + 1}月`;
 
         // 月の最初の日と最後の日を取得
         const firstDay = new Date(year, month, 1);
@@ -159,13 +229,18 @@ class CalendarManager {
             }
         }
 
-        // 今日が表示される月の場合、今日のデータを表示
-        if (this.monthOffset === 0) {
+        // 今日が表示される年月で、選択日が設定されていない場合のみ今日のデータを表示
+        const now = new Date();
+        const isCurrentYearMonth = this.selectedYear === now.getFullYear() && this.selectedMonth === (now.getMonth() + 1);
+        
+        if (isCurrentYearMonth && this.selectedDate) {
             const today = new Date();
             const todayStr = today.toISOString().split('T')[0];
             
-            // 今日のデータをサイドバーに表示
-            await this.displayDateInfo(todayStr);
+            // 既に今日が選択されている場合のみデータを表示（無限ループ防止）
+            if (this.selectedDate === todayStr) {
+                await this.updateSelectedDateInfo(today);
+            }
         }
     }
 
@@ -181,6 +256,11 @@ class CalendarManager {
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
         const day = date.getDate().toString().padStart(2, '0');
         const dateKey = `${year}-${month}-${day}`;
+        
+        // data-date属性を追加（選択状態管理用）
+        dayElement.setAttribute('data-date', dateKey);
+        console.log('📅 Created calendar day:', dateKey, 'for date:', date);
+        
         const dayNumber = date.getDate();
         const isCurrentMonth = date.getMonth() === currentMonth;
         const isToday = this.isToday(date);
@@ -215,13 +295,15 @@ class CalendarManager {
         if (isToday) {
             dayElement.classList.add('today');
         }
-        if (this.selectedDate && this.selectedDate.toDateString() === date.toDateString()) {
+        // 選択日の比較（文字列形式で比較）
+        const dateStr = date.toISOString().split('T')[0];
+        if (this.selectedDate && this.selectedDate === dateStr) {
             dayElement.classList.add('selected');
         }
 
-        // クリックイベント
-        dayElement.addEventListener('click', () => {
-            this.selectDate(date);
+        // クリックイベント（イベントオブジェクトも渡す）
+        dayElement.addEventListener('click', (event) => {
+            this.selectDate(date, event.target);
         });
 
         return dayElement;
@@ -230,18 +312,46 @@ class CalendarManager {
     /**
      * 日付を選択
      */
-    async selectDate(date) {
-        this.selectedDate = date;
+    async selectDate(date, clickedElement = null) {
+        // 日付を文字列形式で保存（YYYY-MM-DD）- タイムゾーン考慮
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        this.selectedDate = `${year}-${month}-${day}`;
         
-        // 選択状態を更新
+        console.log('📅 selectDate called:', {
+            clickedDate: date,
+            selectedDateStr: this.selectedDate,
+            clickedElement: clickedElement,
+            dateComponents: { year, month, day }
+        });
+        
+        // 選択状態を即座に更新（DOM操作）
         document.querySelectorAll('.calendar-day').forEach(day => {
             day.classList.remove('selected');
         });
-        event.target.closest('.calendar-day').classList.add('selected');
-
+        
+        // クリックされた要素を直接使用するか、data-date属性で検索
+        let targetCell = null;
+        if (clickedElement) {
+            // クリックされた要素が.calendar-dayか、その子要素かを確認
+            targetCell = clickedElement.closest('.calendar-day');
+        }
+        
+        if (!targetCell) {
+            // フォールバック: data-date属性で検索
+            targetCell = document.querySelector(`[data-date="${this.selectedDate}"]`);
+        }
+        
+        console.log('📅 Target cell:', targetCell);
+        if (targetCell) {
+            targetCell.classList.add('selected');
+        } else {
+            console.warn('📅 Could not find target cell for date:', this.selectedDate);
+        }
+        
         // サイドバーを更新
         await this.updateSelectedDateInfo(date);
-        await this.renderCalendar(); // カレンダーを再描画して選択状態を反映
     }
 
     /**
@@ -263,6 +373,9 @@ class CalendarManager {
         const statsContainer = document.getElementById('selectedDateStats');
         
         if (dailyData && dailyData.totalTokens > 0) {
+            // 選択した日付の正確なアクティブ時間を取得
+            const actualActiveHours = await this.getDateActiveHours(dateKey);
+            
             // 統計を表示
             document.getElementById('selectedDateTokens').textContent = 
                 `${dailyData.totalTokens.toLocaleString()} tokens`;
@@ -271,7 +384,7 @@ class CalendarManager {
             document.getElementById('selectedDateCalls').textContent = 
                 `${dailyData.calls.toLocaleString()} calls`;
             document.getElementById('selectedDateHours').textContent = 
-                `${dailyData.activeHoursCount} hours`;
+                `${actualActiveHours} hours`;
             
             statsContainer.classList.remove('hidden');
             

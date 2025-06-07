@@ -228,7 +228,7 @@ body {
     background-color: var(--surface-color-alpha);
 }
 
-/* カレンダー用月選択フィルターバー */
+/* カレンダー用年・月選択フィルターバー */
 .month-filter-bar-header {
     background-color: var(--surface-color);
     border-bottom: 1px solid var(--border-color);
@@ -297,10 +297,39 @@ body {
     border-radius: 50%;
 }
 
+/* 年・月選択コントロール */
+.year-month-controls {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.year-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.year-display {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color);
+    min-width: 60px;
+    text-align: center;
+}
+
+.year-nav-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0.25rem;
+    font-size: 1rem;
+}
+
 /* 月選択ボタンスタイル */
 .month-filter-buttons {
     display: flex;
     gap: 0.25rem;
+    flex-wrap: wrap;
 }
 
 .month-filter-bar-header .month-filter-btn {
@@ -811,7 +840,7 @@ body {
 .calendar-view {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 1rem 2rem 2rem; /* 上部余白を減らす */
+    padding: 0; /* パディングを削除 */
     min-height: calc(100vh - 128px); /* ヘッダー80px + フィルターバー48px */
 }
 
@@ -852,27 +881,34 @@ body {
 .calendar-main {
     display: grid;
     grid-template-columns: 1fr 350px;
-    grid-template-rows: auto 1fr;
-    gap: 2rem;
+    /* grid-template-rows: auto 1fr; // 月ヘッダー削除のためauto行不要 */
+    gap: 1rem;
+    padding: 1rem; /* 内部パディングを追加 */
 }
 
+/* カレンダー月ヘッダー（コメントアウト - 年・月選択バーに移行） */
+/*
 .calendar-month-header {
-    grid-column: 1 / -1; /* 全幅に配置 */
+    grid-column: 1 / -1;
     text-align: center;
-    margin-bottom: 0; /* grid gapがあるので不要 */
+    margin-bottom: 0;
     padding: 1rem;
     background-color: var(--surface-color);
     border-radius: var(--border-radius-lg);
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow);
 }
+*/
 
+/* カレンダー月ヘッダーh2（コメントアウト - 年・月選択バーに移行） */
+/*
 .calendar-month-header h2 {
     font-size: 1.5rem;
     font-weight: 600;
     color: var(--text-color);
     margin: 0;
 }
+*/
 
 /* カレンダーグリッド */
 .calendar-grid {

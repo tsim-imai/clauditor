@@ -175,16 +175,32 @@
 
         <!-- カレンダー画面 -->
         <div id="calendarView" class="calendar-view hidden">
-            <!-- 月選択フィルターバー（カレンダー用） -->
+            <!-- 年・月選択フィルターバー（カレンダー用） -->
             <div id="monthFilterBar" class="month-filter-bar-header hidden">
-                <div class="month-filter-buttons">
-                    <button class="month-filter-btn" data-offset="0">今月</button>
-                    <button class="month-filter-btn" data-offset="-1">先月</button>
-                    <button class="month-filter-btn" data-offset="-2">2ヶ月前</button>
-                    <button class="month-filter-btn" data-offset="-3">3ヶ月前</button>
-                    <button class="month-filter-btn" data-offset="-4">4ヶ月前</button>
-                    <button class="month-filter-btn" data-offset="-5">5ヶ月前</button>
-                    <button class="month-filter-btn" data-offset="-6">6ヶ月前</button>
+                <div class="year-month-controls">
+                    <div class="year-controls">
+                        <button id="prevYearBtn" class="icon-button year-nav-btn">
+                            <i class="material-icons">keyboard_arrow_left</i>
+                        </button>
+                        <span id="currentYearDisplay" class="year-display">2025</span>
+                        <button id="nextYearBtn" class="icon-button year-nav-btn">
+                            <i class="material-icons">keyboard_arrow_right</i>
+                        </button>
+                    </div>
+                    <div class="month-filter-buttons">
+                        <button class="month-filter-btn" data-month="1">1月</button>
+                        <button class="month-filter-btn" data-month="2">2月</button>
+                        <button class="month-filter-btn" data-month="3">3月</button>
+                        <button class="month-filter-btn" data-month="4">4月</button>
+                        <button class="month-filter-btn" data-month="5">5月</button>
+                        <button class="month-filter-btn" data-month="6">6月</button>
+                        <button class="month-filter-btn" data-month="7">7月</button>
+                        <button class="month-filter-btn" data-month="8">8月</button>
+                        <button class="month-filter-btn" data-month="9">9月</button>
+                        <button class="month-filter-btn" data-month="10">10月</button>
+                        <button class="month-filter-btn" data-month="11">11月</button>
+                        <button class="month-filter-btn" data-month="12">12月</button>
+                    </div>
                 </div>
                 <div class="calendar-actions">
                     <button id="calendarRefreshBtn" class="icon-button">
@@ -195,10 +211,10 @@
 
             <!-- カレンダーメイン -->
             <div class="calendar-main">
-                <!-- カレンダーヘッダー（月名表示） -->
-                <div class="calendar-month-header">
+                <!-- カレンダーヘッダー（月名表示） - 年・月選択バーに移行したため不要 -->
+                <!-- <div class="calendar-month-header">
                     <h2 id="calendarTitle">2024年6月</h2>
-                </div>
+                </div> -->
 
                 <!-- カレンダーグリッド -->
                 <div class="calendar-grid">
