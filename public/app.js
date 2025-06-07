@@ -773,14 +773,27 @@ class AppState {
             btn.classList.remove('active');
         });
         
+        // フィルターバーとメインコンテナの参照
+        const timeFilterBar = document.getElementById('timeFilterBar');
+        const mainContainer = document.querySelector('.main-container');
+        
         if (view === 'dashboard') {
             document.getElementById('dashboardViewBtn').classList.add('active');
             document.getElementById('mainDashboard').classList.remove('hidden');
             document.getElementById('calendarView').classList.add('hidden');
+            
+            // フィルターバーを表示
+            timeFilterBar.classList.remove('hidden');
+            mainContainer.classList.add('with-filter-bar');
         } else if (view === 'calendar') {
             document.getElementById('calendarViewBtn').classList.add('active');
             document.getElementById('mainDashboard').classList.add('hidden');
             document.getElementById('calendarView').classList.remove('hidden');
+            
+            // フィルターバーを非表示
+            timeFilterBar.classList.add('hidden');
+            mainContainer.classList.remove('with-filter-bar');
+            
             this.calendarManager.renderCalendar();
         }
     }
@@ -800,20 +813,27 @@ class AppState {
         const loadingMessage = document.getElementById('loadingMessage');
         const mainDashboard = document.getElementById('mainDashboard');
         const calendarView = document.getElementById('calendarView');
+        const timeFilterBar = document.getElementById('timeFilterBar');
+        const mainContainer = document.querySelector('.main-container');
 
         if (this.loading) {
             loadingMessage.classList.remove('hidden');
             mainDashboard.classList.add('hidden');
             calendarView.classList.add('hidden');
+            timeFilterBar.classList.add('hidden');
         } else {
             loadingMessage.classList.add('hidden');
             
             if (this.currentView === 'dashboard') {
                 mainDashboard.classList.remove('hidden');
                 calendarView.classList.add('hidden');
+                timeFilterBar.classList.remove('hidden');
+                mainContainer.classList.add('with-filter-bar');
             } else if (this.currentView === 'calendar') {
                 mainDashboard.classList.add('hidden');
                 calendarView.classList.remove('hidden');
+                timeFilterBar.classList.add('hidden');
+                mainContainer.classList.remove('with-filter-bar');
             }
         }
     }

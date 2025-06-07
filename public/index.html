@@ -40,6 +40,22 @@
         </div>
     </header>
 
+    <!-- 時間フィルターバー（ダッシュボード用） -->
+    <div id="timeFilterBar" class="time-filter-bar-header hidden">
+        <div class="time-filter-buttons">
+            <button class="time-filter-btn active" data-period="today">今日</button>
+            <button class="time-filter-btn" data-period="week">今週</button>
+            <button class="time-filter-btn" data-period="month">今月</button>
+            <button class="time-filter-btn" data-period="year">今年</button>
+            <button class="time-filter-btn" data-period="all">全期間</button>
+        </div>
+        <div class="dashboard-actions">
+            <button id="refreshButton" class="icon-button" title="手動更新（リアルタイム更新有効）">
+                <i class="material-icons">refresh</i>
+            </button>
+        </div>
+    </div>
+
     <!-- メインコンテンツ -->
     <main class="main-container">
         <div id="loadingMessage" class="loading-card">
@@ -49,21 +65,6 @@
 
         <!-- ダッシュボード画面 -->
         <div id="mainDashboard" class="dashboard hidden">
-            <!-- 時間フィルター -->
-            <div class="time-filter-bar">
-                <div class="time-filter-buttons">
-                    <button class="time-filter-btn active" data-period="today">今日</button>
-                    <button class="time-filter-btn" data-period="week">今週</button>
-                    <button class="time-filter-btn" data-period="month">今月</button>
-                    <button class="time-filter-btn" data-period="year">今年</button>
-                    <button class="time-filter-btn" data-period="all">全期間</button>
-                </div>
-                <div class="dashboard-actions">
-                    <button id="refreshButton" class="icon-button" title="手動更新（リアルタイム更新有効）">
-                        <i class="material-icons">refresh</i>
-                    </button>
-                </div>
-            </div>
 
             <!-- 主要統計カード -->
             <div class="stats-overview">
