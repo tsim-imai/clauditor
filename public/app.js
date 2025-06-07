@@ -12,6 +12,10 @@ class AppState {
         // DuckDBデータプロセッサーインスタンスを作成（統一データ処理）
         this.duckDBProcessor = new DuckDBDataProcessor();
         
+        // SettingsManagerインスタンスを作成（最初に初期化）
+        this.settingsManager = new SettingsManager();
+        this.settings = this.settingsManager.getSettings();
+        
         // MiniModeManagerインスタンスを作成
         this.miniModeManager = new MiniModeManager(this.duckDBProcessor, this.settings);
         
@@ -20,10 +24,6 @@ class AppState {
         
         // ChartManagerインスタンスを作成
         this.chartManager = new ChartManager(this.duckDBProcessor, this.settings);
-        
-        // SettingsManagerインスタンスを作成
-        this.settingsManager = new SettingsManager();
-        this.settings = this.settingsManager.getSettings();
         
         // 設定変更時のコールバックを設定
         this.settingsManager.setOnSettingsChange((newSettings) => {
@@ -100,8 +100,9 @@ class AppState {
         
         // 定期的なデータ更新 (DuckDBキャッシュと同期)
         setInterval(() => {
-            console.log('🔄 定期データ更新 (DuckDB)');
-            this.refreshData(false, true); // isAutoUpdate = true
+            console.log('🔄 定期データ更新 (DuckDB) - 期間:', this.currentPeriod);
+            // 現在の期間設定を保持してサイレント更新
+            this.updateDashboardSilentForCurrentPeriod();
         }, 30000); // 30秒間隔
 
         // データを読み込み
@@ -393,6 +394,17 @@ class AppState {
         this.chartManager.updateChartsSilent(chartData);
         
         this.updateInsightsWithData(chartData);
+    }
+
+    // 現在の期間設定でサイレント更新（定期更新用）
+    async updateDashboardSilentForCurrentPeriod() {
+        try {
+            console.log('🔄 期間別サイレント更新:', this.currentPeriod);
+            const chartData = await this.duckDBProcessor.getChartCompatibleData(this.currentPeriod);
+            this.updateDashboardSilentWithData(chartData);
+        } catch (error) {
+            console.error('定期更新エラー:', error);
+        }
     }
 
     // メッセージ統計を更新（一時的に無効化）

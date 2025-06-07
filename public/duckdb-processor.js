@@ -64,6 +64,130 @@ class DuckDBDataProcessor {
     }
 
     /**
+     * 期間に応じた適切な集計単位を決定
+     */
+    async getAggregationUnit(period) {
+        switch (period) {
+            case 'today':
+                return 'hourly'; // 時間別（00:00-23:59）
+            case 'week':
+            case 'month':
+                return 'daily'; // 日別
+            case 'year':
+                return 'monthly'; // 月別
+            case 'all':
+                return await this.determineAutoAggregation(); // 動的判定
+            default:
+                return 'daily';
+        }
+    }
+
+    /**
+     * 全期間の自動集計単位決定
+     */
+    async determineAutoAggregation() {
+        try {
+            // データの期間範囲を取得
+            const rangeQuery = `
+                SELECT 
+                    MIN(DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')) as min_date,
+                    MAX(DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')) as max_date,
+                    COUNT(DISTINCT DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')) as total_days
+                FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
+                WHERE timestamp IS NOT NULL
+            `;
+            
+            const result = await this.executeDuckDBQuery(rangeQuery);
+            if (!result || result.length === 0) {
+                return 'daily';
+            }
+            
+            const { min_date, max_date, total_days } = result[0];
+            
+            if (!min_date || !max_date) {
+                return 'daily';
+            }
+            
+            // 期間に応じて集計単位を決定
+            const daysDiff = total_days || 0;
+            
+            if (daysDiff <= 31) {
+                return 'daily'; // 1ヶ月以下は日別
+            } else if (daysDiff <= 365) {
+                return 'daily'; // 1年以下も日別（月別だと少なすぎる）
+            } else {
+                return 'monthly'; // 1年超は月別
+            }
+            
+        } catch (error) {
+            console.warn('自動集計単位決定でエラー:', error);
+            return 'daily'; // エラー時はデフォルト
+        }
+    }
+
+    /**
+     * 集計単位に応じたクエリを生成
+     */
+    generateTimeSeriesQuery(period, unit, startDate) {
+        const baseWhere = `WHERE timestamp IS NOT NULL AND timestamp >= '${startDate}'`;
+        
+        switch (unit) {
+            case 'hourly':
+                return `
+                    SELECT 
+                        HOUR(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as time_unit,
+                        DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as date,
+                        SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER)) as input_tokens,
+                        SUM(CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as output_tokens,
+                        SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER) + 
+                            CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as total_tokens,
+                        SUM(COALESCE(costUSD, 0)) as cost_usd,
+                        COUNT(*) as entries
+                    FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
+                    ${baseWhere}
+                    GROUP BY HOUR(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo'), 
+                             DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')
+                    ORDER BY date DESC, time_unit ASC
+                `;
+            
+            case 'monthly':
+                return `
+                    SELECT 
+                        EXTRACT(YEAR FROM timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as year,
+                        EXTRACT(MONTH FROM timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as month,
+                        SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER)) as input_tokens,
+                        SUM(CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as output_tokens,
+                        SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER) + 
+                            CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as total_tokens,
+                        SUM(COALESCE(costUSD, 0)) as cost_usd,
+                        COUNT(*) as entries
+                    FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
+                    ${baseWhere}
+                    GROUP BY EXTRACT(YEAR FROM timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo'),
+                             EXTRACT(MONTH FROM timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')
+                    ORDER BY year DESC, month DESC
+                `;
+            
+            case 'daily':
+            default:
+                return `
+                    SELECT 
+                        DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as date,
+                        SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER)) as input_tokens,
+                        SUM(CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as output_tokens,
+                        SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER) + 
+                            CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as total_tokens,
+                        SUM(COALESCE(costUSD, 0)) as cost_usd,
+                        COUNT(*) as entries
+                    FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
+                    ${baseWhere}
+                    GROUP BY DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')
+                    ORDER BY date DESC
+                `;
+        }
+    }
+
+    /**
      * 期間統計を取得（Chart.js互換データ）
      */
     async getChartCompatibleData(period) {
@@ -89,25 +213,12 @@ class DuckDBDataProcessor {
         
         try {
             const startDate = this.getStartDate(period);
+            const aggregationUnit = await this.getAggregationUnit(period);
             
-            // 日別データクエリ（test.shパターン）
-            const dailyQuery = `
-                SELECT 
-                    DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as date,
-                    SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER)) as input_tokens,
-                    SUM(CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as output_tokens,
-                    SUM(CAST(message -> 'usage' ->> 'input_tokens' AS INTEGER) + 
-                        CAST(message -> 'usage' ->> 'output_tokens' AS INTEGER)) as total_tokens,
-                    SUM(COALESCE(costUSD, 0)) as cost_usd,
-                    COUNT(*) as entries
-                FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true)
-                WHERE timestamp IS NOT NULL 
-                  AND timestamp >= '${startDate}'
-                GROUP BY DATE(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')
-                ORDER BY date DESC
-            `;
+            // 期間に応じた適切な集計クエリを生成
+            const timeSeriesQuery = this.generateTimeSeriesQuery(period, aggregationUnit, startDate);
 
-            // 時間別データクエリ
+            // 時間別データクエリ（hourlyChart用）
             const hourlyQuery = `
                 SELECT 
                     HOUR(timestamp::TIMESTAMP AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo') as hour,
@@ -154,15 +265,15 @@ class DuckDBDataProcessor {
             `;
 
             // 並列クエリ実行
-            const [dailyData, hourlyData, projectData, statsData] = await Promise.all([
-                this.executeDuckDBQuery(dailyQuery),
+            const [timeSeriesData, hourlyData, projectData, statsData] = await Promise.all([
+                this.executeDuckDBQuery(timeSeriesQuery),
                 this.executeDuckDBQuery(hourlyQuery),
                 this.executeDuckDBQuery(projectQuery),
                 this.executeDuckDBQuery(statsQuery)
             ]);
 
             // データを処理してChart.js互換形式に変換
-            const chartData = this.formatChartData(dailyData, hourlyData, projectData, statsData[0]);
+            const chartData = this.formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, statsData[0], period, aggregationUnit);
             
             // 両方のキャッシュに保存
             const cacheEntry = { data: chartData, timestamp: Date.now() };
@@ -170,19 +281,168 @@ class DuckDBDataProcessor {
             this.fastCache.set(cacheKey, cacheEntry);
             
             console.timeEnd('🚀 DuckDB Query Execution');
-            console.log(`📊 DuckDB処理完了: ${dailyData.length}日分, ${projectData.length}プロジェクト`);
+            console.log(`📊 DuckDB処理完了: ${timeSeriesData.length}データポイント, ${projectData.length}プロジェクト, 集計単位: ${aggregationUnit}`);
             
             return chartData;
             
         } catch (error) {
             console.error('DuckDB データ取得エラー:', error);
-            console.timeEnd('🚀 DuckDB Query Execution');
+            // console.timeEndでエラーが出る場合があるので try-catch で囲む
+            try {
+                console.timeEnd('🚀 DuckDB Query Execution');
+            } catch (timeError) {
+                // タイマーエラーは無視
+            }
             throw error;
         }
     }
 
     /**
-     * データをChart.js互換形式にフォーマット
+     * 期間別ラベルフォーマット
+     */
+    formatTimeSeriesLabel(data, unit) {
+        switch (unit) {
+            case 'hourly':
+                return `${data.time_unit}:00`;
+            case 'monthly':
+                return `${data.year}/${String(data.month).padStart(2, '0')}`;
+            case 'daily':
+            default:
+                return Utils.formatDate ? Utils.formatDate(data.date) : data.date;
+        }
+    }
+
+    /**
+     * 時系列データをChartManager互換形式にフォーマット
+     */
+    formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, stats, period, unit) {
+        console.log('🔍 formatChartDataWithTimeSeries 開始:', {
+            timeSeriesDataLength: timeSeriesData?.length,
+            hourlyDataLength: hourlyData?.length,
+            projectDataLength: projectData?.length,
+            statsExists: !!stats,
+            period,
+            unit
+        });
+        // 24時間の配列を初期化（hourlyChart用）
+        const hourlyTokens = new Array(24).fill(0);
+        if (Array.isArray(hourlyData)) {
+            hourlyData.forEach(row => {
+                if (row && row.hour >= 0 && row.hour <= 23) {
+                    hourlyTokens[row.hour] = row.total_tokens || 0;
+                }
+            });
+        }
+
+        // 時系列データをChartManager形式に変換
+        let formattedTimeSeriesData = [];
+        
+        if (unit === 'hourly') {
+            // 今日の場合：0-23時の24時間データを生成
+            const hourlyMap = new Map();
+            if (Array.isArray(timeSeriesData)) {
+                timeSeriesData.forEach(row => {
+                    if (row && typeof row.time_unit !== 'undefined') {
+                        hourlyMap.set(row.time_unit, row);
+                    }
+                });
+            }
+            
+            for (let hour = 0; hour < 24; hour++) {
+                const hourData = hourlyMap.get(hour) || {
+                    time_unit: hour,
+                    total_tokens: 0,
+                    cost_usd: 0,
+                    entries: 0
+                };
+                
+                formattedTimeSeriesData.push({
+                    date: `${hour}:00`,
+                    tokens: hourData.total_tokens || 0,
+                    cost: (hourData.cost_usd || 0) * 150,
+                    calls: hourData.entries || 0
+                });
+            }
+        } else if (unit === 'monthly') {
+            // 年の場合：月別データ
+            if (Array.isArray(timeSeriesData)) {
+                formattedTimeSeriesData = timeSeriesData.map(row => ({
+                    date: `${row.year}/${String(row.month).padStart(2, '0')}`,
+                    tokens: row.total_tokens || 0,
+                    cost: (row.cost_usd || 0) * 150,
+                    calls: row.entries || 0
+                }));
+            }
+        } else {
+            // 週・月の場合：日別データ
+            if (Array.isArray(timeSeriesData)) {
+                formattedTimeSeriesData = timeSeriesData.map(row => ({
+                    date: row.date,
+                    tokens: row.total_tokens || 0,
+                    cost: (row.cost_usd || 0) * 150,
+                    calls: row.entries || 0
+                }));
+            }
+        }
+
+        // プロジェクト別データの処理
+        const projectLabels = Array.isArray(projectData) ? projectData.map(row => row.project_name || 'Unknown') : [];
+        const projectTokens = Array.isArray(projectData) ? projectData.map(row => row.total_tokens || 0) : [];
+
+        // 統計データの処理（安全性チェック付き）
+        const safeStats = stats || {};
+        const totalStats = {
+            totalTokens: safeStats.total_tokens || 0,
+            inputTokens: safeStats.total_input_tokens || 0,
+            outputTokens: safeStats.total_output_tokens || 0,
+            totalCostUSD: safeStats.total_cost_usd || 0,
+            totalCostJPY: (safeStats.total_cost_usd || 0) * 150,
+            totalEntries: safeStats.total_entries || 0,
+            activeHours: Math.round((safeStats.active_hours || 0) * 10) / 10,
+            activeDays: safeStats.active_days || 0
+        };
+
+        // 週別データを生成（既存のチャート用）
+        const weeklyData = unit === 'daily' ? this.generateWeeklyData(formattedTimeSeriesData) : [];
+
+        return {
+            // 新しい時系列データ（使用量推移チャート用）
+            dailyData: formattedTimeSeriesData,
+            
+            // hourlyChartで使用される時間別データ
+            hourlyData: hourlyTokens,
+            
+            // 週別データ
+            weeklyData: weeklyData,
+            
+            // Chart.js用のプロジェクトデータ
+            projectData: projectTokens,
+            projectLabels: projectLabels,
+            
+            // 統計データ
+            stats: {
+                totalTokens: totalStats.totalTokens,
+                inputTokens: totalStats.inputTokens, 
+                outputTokens: totalStats.outputTokens,
+                costUSD: totalStats.totalCostUSD,
+                costJPY: totalStats.totalCostJPY,
+                entries: totalStats.totalEntries
+            },
+            
+            // アクティブ時間
+            activeHours: totalStats.activeHours,
+            
+            // 期間とユニット情報（デバッグ用）
+            meta: {
+                period: period,
+                unit: unit,
+                dataPoints: formattedTimeSeriesData.length
+            }
+        };
+    }
+
+    /**
+     * データをChart.js互換形式にフォーマット（旧メソッド - 後方互換性用）
      */
     formatChartData(dailyData, hourlyData, projectData, stats) {
         // 24時間の配列を初期化（0-23時）

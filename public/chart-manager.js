@@ -93,9 +93,9 @@ class ChartManager {
                 color = '#3b82f6';
         }
         
-        // ラベルの生成
+        // ラベルの生成（期間に応じて適切にフォーマット）
         const labels = Array.isArray(dailyData) ? 
-            dailyData.map(d => d.date ? Utils.formatDate(d.date) : '') : 
+            dailyData.map(d => this.formatChartLabel(d.date, chartData.meta)) : 
             [];
         
         this.charts.usage.data.labels = labels;
@@ -192,9 +192,9 @@ class ChartManager {
                 color = '#3b82f6';
         }
 
-        // ラベルの生成（日付）
+        // ラベルの生成（期間に応じて適切にフォーマット）
         const labels = Array.isArray(dailyData) ? 
-            dailyData.map(d => d.date ? Utils.formatDate(d.date) : '') : 
+            dailyData.map(d => this.formatChartLabel(d.date, chartData.meta)) : 
             [];
 
         this.charts.usage = new Chart(ctx, {
@@ -226,18 +226,22 @@ class ChartManager {
                     y: {
                         beginAtZero: true,
                         grid: {
-                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
                         },
                         ticks: {
-                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                            color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
                         }
                     },
                     x: {
+                        type: 'category',
                         grid: {
-                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
                         },
                         ticks: {
-                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                            color: this.settings?.darkMode ? '#cbd5e1' : '#64748b',
+                            maxTicksLimit: chartData.meta && chartData.meta.unit === 'hourly' ? 24 : 
+                                          chartData.meta && chartData.meta.unit === 'monthly' ? 12 : 
+                                          15 // 日別の場合は最大15ティック
                         }
                     }
                 }
@@ -325,18 +329,18 @@ class ChartManager {
                     y: {
                         beginAtZero: true,
                         grid: {
-                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
                         },
                         ticks: {
-                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                            color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
                         }
                     },
                     x: {
                         grid: {
-                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
                         },
                         ticks: {
-                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                            color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
                         }
                     }
                 }
@@ -423,7 +427,7 @@ class ChartManager {
                 plugins: {
                     legend: {
                         labels: {
-                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                            color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
                         }
                     }
                 },
@@ -431,18 +435,18 @@ class ChartManager {
                     y: {
                         beginAtZero: true,
                         grid: {
-                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
                         },
                         ticks: {
-                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                            color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
                         }
                     },
                     x: {
                         grid: {
-                            color: this.settings.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
                         },
                         ticks: {
-                            color: this.settings.darkMode ? '#cbd5e1' : '#64748b'
+                            color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
                         }
                     }
                 }
@@ -487,6 +491,29 @@ class ChartManager {
      */
     updateUsageChart(filteredEntries) {
         this.createUsageChart(filteredEntries);
+    }
+
+    /**
+     * 期間に応じたチャートラベルフォーマット
+     */
+    formatChartLabel(dateString, meta) {
+        if (!meta || !meta.unit) {
+            // メタ情報がない場合はデフォルトフォーマット
+            return Utils.formatDate ? Utils.formatDate(dateString) : dateString;
+        }
+
+        switch (meta.unit) {
+            case 'hourly':
+                // 時間データ（"0:00", "1:00" など）
+                return dateString;
+            case 'monthly':
+                // 月別データ（"2024/01", "2024/02" など）
+                return dateString;
+            case 'daily':
+            default:
+                // 日別データ（通常の日付フォーマット）
+                return Utils.formatDate ? Utils.formatDate(dateString) : dateString;
+        }
     }
 
     /**
