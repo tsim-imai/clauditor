@@ -7,11 +7,17 @@ class CalendarManager {
         this.duckDBProcessor = duckDBProcessor;
         this.settings = settings;
         this.currentDate = new Date();
-        this.selectedDate = null;
+        this.monthOffset = 0; // 月オフセット（0=今月, -1=先月, etc）
+        
+        // デフォルトで今日を選択
+        const today = new Date();
+        this.selectedDate = today.toISOString().split('T')[0]; // YYYY-MM-DD format
+        
         this.charts = {};
         this.dailyDataCache = new Map(); // 日別データキャッシュ
         
         console.log('CalendarManager initialized with DuckDBProcessor:', !!duckDBProcessor, 'settings:', !!settings);
+        console.log('デフォルト選択日:', this.selectedDate);
     }
 
     /**
@@ -19,6 +25,22 @@ class CalendarManager {
      */
     updateSettings(settings) {
         this.settings = settings;
+    }
+
+    /**
+     * 月オフセットを設定
+     */
+    setMonthOffset(offset) {
+        this.monthOffset = offset;
+    }
+
+    /**
+     * 表示対象の月を取得
+     */
+    getDisplayMonth() {
+        const now = new Date();
+        const displayDate = new Date(now.getFullYear(), now.getMonth() + this.monthOffset, 1);
+        return displayDate;
     }
 
     /**
@@ -106,9 +128,12 @@ class CalendarManager {
      * カレンダーを描画
      */
     async renderCalendar() {
-        console.log('CalendarManager.renderCalendar called, currentDate:', this.currentDate);
-        const year = this.currentDate.getFullYear();
-        const month = this.currentDate.getMonth();
+        console.log('CalendarManager.renderCalendar called, monthOffset:', this.monthOffset);
+        
+        // 表示対象月を取得
+        const displayMonth = this.getDisplayMonth();
+        const year = displayMonth.getFullYear();
+        const month = displayMonth.getMonth();
         
         // カレンダータイトルを更新
         document.getElementById('calendarTitle').textContent = 
@@ -132,6 +157,15 @@ class CalendarManager {
                 const dayElement = await this.createCalendarDay(currentDate, month);
                 calendarDays.appendChild(dayElement);
             }
+        }
+
+        // 今日が表示される月の場合、今日のデータを表示
+        if (this.monthOffset === 0) {
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            
+            // 今日のデータをサイドバーに表示
+            await this.displayDateInfo(todayStr);
         }
     }
 
@@ -278,29 +312,6 @@ class CalendarManager {
         ctx.fillText('データなし', ctx.canvas.width / 2, ctx.canvas.height / 2);
     }
 
-    /**
-     * 前月に移動
-     */
-    async goToPreviousMonth() {
-        this.currentDate.setMonth(this.currentDate.getMonth() - 1);
-        await this.renderCalendar();
-    }
-
-    /**
-     * 次月に移動
-     */
-    async goToNextMonth() {
-        this.currentDate.setMonth(this.currentDate.getMonth() + 1);
-        await this.renderCalendar();
-    }
-
-    /**
-     * 今日に移動
-     */
-    async goToToday() {
-        this.currentDate = new Date();
-        await this.renderCalendar();
-    }
 
     /**
      * カレンダーデータを更新（データ更新時に呼び出し）

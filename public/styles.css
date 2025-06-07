@@ -228,6 +228,22 @@ body {
     background-color: var(--surface-color-alpha);
 }
 
+/* カレンダー用月選択フィルターバー */
+.month-filter-bar-header {
+    background-color: var(--surface-color);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0.5rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 48px;
+    position: sticky;
+    top: 80px; /* ヘッダーの高さ分 */
+    z-index: 50;
+    backdrop-filter: blur(8px);
+    background-color: var(--surface-color-alpha);
+}
+
 /* 旧時間フィルターバー（削除予定） */
 .time-filter-bar {
     display: flex;
@@ -281,13 +297,56 @@ body {
     border-radius: 50%;
 }
 
-/* ヘッダー用ダッシュボードアクション */
-.time-filter-bar-header .dashboard-actions {
+/* 月選択ボタンスタイル */
+.month-filter-buttons {
     display: flex;
     gap: 0.25rem;
 }
 
-.time-filter-bar-header .icon-button {
+.month-filter-bar-header .month-filter-btn {
+    padding: 0.4rem 1rem;
+    border: none;
+    background-color: transparent;
+    color: var(--text-secondary);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-weight: 500;
+    font-size: 0.85rem;
+    position: relative;
+}
+
+.month-filter-bar-header .month-filter-btn:hover {
+    background-color: var(--surface-secondary);
+    color: var(--text-color);
+}
+
+.month-filter-bar-header .month-filter-btn.active {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.month-filter-bar-header .month-filter-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -0.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    background-color: var(--accent-color);
+    border-radius: 50%;
+}
+
+/* ヘッダー用ダッシュボードアクション */
+.time-filter-bar-header .dashboard-actions,
+.month-filter-bar-header .calendar-actions {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.time-filter-bar-header .icon-button,
+.month-filter-bar-header .icon-button {
     width: 36px;
     height: 36px;
     padding: 0.5rem;
@@ -752,9 +811,10 @@ body {
 .calendar-view {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 2rem;
-    min-height: calc(100vh - 80px);
+    padding: 1rem 2rem 2rem; /* 上部余白を減らす */
+    min-height: calc(100vh - 128px); /* ヘッダー80px + フィルターバー48px */
 }
+
 
 .calendar-header {
     display: flex;
@@ -792,7 +852,26 @@ body {
 .calendar-main {
     display: grid;
     grid-template-columns: 1fr 350px;
+    grid-template-rows: auto 1fr;
     gap: 2rem;
+}
+
+.calendar-month-header {
+    grid-column: 1 / -1; /* 全幅に配置 */
+    text-align: center;
+    margin-bottom: 0; /* grid gapがあるので不要 */
+    padding: 1rem;
+    background-color: var(--surface-color);
+    border-radius: var(--border-radius-lg);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow);
+}
+
+.calendar-month-header h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 0;
 }
 
 /* カレンダーグリッド */

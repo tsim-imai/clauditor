@@ -173,21 +173,18 @@ class AppState {
             this.switchView('calendar');
         });
 
-        // カレンダーナビゲーション
-        document.getElementById('prevMonthBtn').addEventListener('click', () => {
-            this.calendarManager.goToPreviousMonth();
-        });
-
-        document.getElementById('nextMonthBtn').addEventListener('click', () => {
-            this.calendarManager.goToNextMonth();
-        });
-
-        document.getElementById('todayBtn').addEventListener('click', () => {
-            this.calendarManager.goToToday();
-        });
+        // 古いカレンダーナビゲーション（削除済み）
 
         document.getElementById('calendarRefreshBtn').addEventListener('click', () => {
             this.refreshData();
+        });
+
+        // 月選択ボタン
+        document.querySelectorAll('.month-filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const offset = parseInt(btn.dataset.offset);
+                this.setMonthOffset(offset);
+            });
         });
     }
 
@@ -822,6 +819,7 @@ class AppState {
         
         // フィルターバーとメインコンテナの参照
         const timeFilterBar = document.getElementById('timeFilterBar');
+        const monthFilterBar = document.getElementById('monthFilterBar');
         const mainContainer = document.querySelector('.main-container');
         
         if (view === 'dashboard') {
@@ -829,20 +827,38 @@ class AppState {
             document.getElementById('mainDashboard').classList.remove('hidden');
             document.getElementById('calendarView').classList.add('hidden');
             
-            // フィルターバーを表示
+            // ダッシュボード用フィルターバーを表示
             timeFilterBar.classList.remove('hidden');
+            monthFilterBar.classList.add('hidden');
             mainContainer.classList.add('with-filter-bar');
         } else if (view === 'calendar') {
             document.getElementById('calendarViewBtn').classList.add('active');
             document.getElementById('mainDashboard').classList.add('hidden');
             document.getElementById('calendarView').classList.remove('hidden');
             
-            // フィルターバーを非表示
+            // カレンダー用フィルターバーを表示
             timeFilterBar.classList.add('hidden');
-            mainContainer.classList.remove('with-filter-bar');
+            monthFilterBar.classList.remove('hidden');
+            mainContainer.classList.add('with-filter-bar');
             
+            // 初期状態で「今月」をアクティブにして今日を選択
+            this.setActiveMonthButton(0);
             this.calendarManager.renderCalendar();
         }
+    }
+
+    // 月選択を設定
+    setMonthOffset(offset) {
+        this.setActiveMonthButton(offset);
+        this.calendarManager.setMonthOffset(offset);
+        this.calendarManager.renderCalendar();
+    }
+
+    // アクティブな月ボタンを設定
+    setActiveMonthButton(offset) {
+        document.querySelectorAll('.month-filter-btn').forEach(btn => {
+            btn.classList.toggle('active', parseInt(btn.dataset.offset) === offset);
+        });
     }
 
 

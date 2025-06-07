@@ -175,19 +175,18 @@
 
         <!-- カレンダー画面 -->
         <div id="calendarView" class="calendar-view hidden">
-            <!-- カレンダーヘッダー -->
-            <div class="calendar-header">
-                <div class="calendar-nav">
-                    <button id="prevMonthBtn" class="icon-button">
-                        <i class="material-icons">chevron_left</i>
-                    </button>
-                    <h2 id="calendarTitle">2024年6月</h2>
-                    <button id="nextMonthBtn" class="icon-button">
-                        <i class="material-icons">chevron_right</i>
-                    </button>
+            <!-- 月選択フィルターバー（カレンダー用） -->
+            <div id="monthFilterBar" class="month-filter-bar-header hidden">
+                <div class="month-filter-buttons">
+                    <button class="month-filter-btn" data-offset="0">今月</button>
+                    <button class="month-filter-btn" data-offset="-1">先月</button>
+                    <button class="month-filter-btn" data-offset="-2">2ヶ月前</button>
+                    <button class="month-filter-btn" data-offset="-3">3ヶ月前</button>
+                    <button class="month-filter-btn" data-offset="-4">4ヶ月前</button>
+                    <button class="month-filter-btn" data-offset="-5">5ヶ月前</button>
+                    <button class="month-filter-btn" data-offset="-6">6ヶ月前</button>
                 </div>
                 <div class="calendar-actions">
-                    <button id="todayBtn" class="button secondary">今日</button>
                     <button id="calendarRefreshBtn" class="icon-button">
                         <i class="material-icons">refresh</i>
                     </button>
@@ -196,6 +195,11 @@
 
             <!-- カレンダーメイン -->
             <div class="calendar-main">
+                <!-- カレンダーヘッダー（月名表示） -->
+                <div class="calendar-month-header">
+                    <h2 id="calendarTitle">2024年6月</h2>
+                </div>
+
                 <!-- カレンダーグリッド -->
                 <div class="calendar-grid">
                     <div class="calendar-weekdays">
