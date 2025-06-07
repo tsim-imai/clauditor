@@ -99,48 +99,14 @@ class AppState {
             return;
         }
 
-        // ファイルウォッチャーを開始
-        try {
-            
-            if (!window.electronAPI || !window.electronAPI.startFileWatcher) {
-                throw new Error('electronAPI or startFileWatcher method not available');
-            }
-            
-            const result = await window.electronAPI.startFileWatcher();
-            
-            if (!result) {
-            }
-            
-            // ファイルシステム変更の監視
-            if (window.electronAPI.onFileSystemChange) {
-                // 起動後の初期化猶予期間を設ける
-                let isInitializing = true;
-                setTimeout(() => {
-                    isInitializing = false;
-                }, 3000); // 3秒間は監視を無効化
-                
-                window.electronAPI.onFileSystemChange((event) => {
-                    
-                    if (isInitializing) {
-                        return;
-                    }
-                    this.showAutoRefreshNotification();
-                    this.debouncedRefreshData();
-                });
-            } else {
-                console.error('❌ onFileSystemChange method not available');
-            }
-            
-            // デバッグ用: 5秒後にテストイベントを送信
-            setTimeout(() => {
-                console.log('🧪 Testing file system change event...');
-                this.showAutoRefreshNotification();
-            }, 5000);
-        } catch (error) {
-            console.error('❌ Failed to start file watcher:', error);
-            console.error('❌ Error details:', error.message);
-            console.error('❌ Error stack:', error.stack);
-        }
+        // DuckDB監視システム (自動リフレッシュはDuckDBキャッシュTTLに依存)
+        console.log('🦆 DuckDB監視システムが有効です (30秒キャッシュ)');
+        
+        // 定期的なデータ更新 (DuckDBキャッシュと同期)
+        setInterval(() => {
+            console.log('🔄 定期データ更新 (DuckDB)');
+            this.refreshData(false, true); // isAutoUpdate = true
+        }, 30000); // 30秒間隔
 
         // データを読み込み
         await this.refreshData();
@@ -179,12 +145,10 @@ class AppState {
             this.miniModeManager.setTimeRange(e.target.value);
         });
 
-        // デバッグ用: Ctrl+Shift+F でファイル監視状態をチェック
+        // DuckDB監視システム用: Ctrl+Shift+T でDuckDBテスト
         document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.shiftKey && e.key === 'F') {
-                this.debugFileWatcher();
-            } else if (e.ctrlKey && e.shiftKey && e.key === 'T') {
-                this.testFileWatcher();
+            if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+                this.testDuckDBMonitoring();
             }
         });
 
@@ -237,12 +201,12 @@ class AppState {
         }
         
         this.refreshDebounceTimer = setTimeout(() => {
-            this.refreshData(true); // サイレント更新
+            this.refreshData(true, true); // サイレント + 自動更新
         }, 5000); // 5秒待ってから更新
     }
 
     // データを更新（パフォーマンス最適化版）
-    async refreshData(silent = false) {
+    async refreshData(silent = false, isAutoUpdate = false) {
         
         // 既に処理中の場合はスキップ
         if (this._refreshing) {
@@ -250,9 +214,13 @@ class AppState {
         }
         this._refreshing = true;
         
-        // 自動更新の場合はローディング表示をスキップ
+        // 自動更新の場合は部分的なローディング表示
         if (!silent) {
-            this.setLoading(true);
+            if (isAutoUpdate) {
+                this.setPartialLoading(true);
+            } else {
+                this.setLoading(true);
+            }
         }
         
         try {
@@ -268,8 +236,8 @@ class AppState {
             // チャートデータを一括取得（DuckDB優先、フォールバック付き）
             const chartData = await this.getChartDataWithFallback(this.currentPeriod);
             
-            // サイレント更新の場合はスムーズな更新を実行
-            if (silent) {
+            // 自動更新またはサイレント更新の場合はスムーズな更新を実行
+            if (silent || isAutoUpdate) {
                 this.updateDashboardSilentWithData(chartData);
             } else {
                 this.updateDashboardWithData(chartData);
@@ -291,7 +259,11 @@ class AppState {
         } finally {
             this._refreshing = false;
             if (!silent) {
-                this.setLoading(false);
+                if (isAutoUpdate) {
+                    this.setPartialLoading(false);
+                } else {
+                    this.setLoading(false);
+                }
             }
         }
     }
@@ -307,10 +279,65 @@ class AppState {
             btn.classList.toggle('active', btn.dataset.period === period);
         });
         
-        // データ処理とチャート更新を同期実行（アニメーション表示のため）
-        // this.filterDataByPeriod(); // 高精度版使用時は不要
-        this.updateDashboard();
+        // 即座にローディング状態を表示
+        this.showPeriodChangeLoading();
         
+        // 非同期でデータ更新（UIブロックを避ける）
+        this.updateDashboardAsync();
+        
+    }
+
+    // 期間変更時のローディング表示
+    showPeriodChangeLoading() {
+        // 統計カードにローディング状態を表示
+        for (let i = 1; i <= 4; i++) {
+            const valueElement = document.getElementById(`statValue${i}`);
+            if (valueElement) {
+                valueElement.style.opacity = '0.6';
+                valueElement.textContent = '...';
+            }
+        }
+        
+        // チャートにローディングオーバーレイ
+        const chartContainers = ['usageChart', 'hourlyChart', 'weeklyChart'];
+        chartContainers.forEach(chartId => {
+            const container = document.getElementById(chartId)?.parentElement;
+            if (container) {
+                container.style.opacity = '0.7';
+            }
+        });
+    }
+
+    // 期間変更後のローディング解除
+    hidePeriodChangeLoading() {
+        // 統計カードの復元
+        for (let i = 1; i <= 4; i++) {
+            const valueElement = document.getElementById(`statValue${i}`);
+            if (valueElement) {
+                valueElement.style.opacity = '1';
+            }
+        }
+        
+        // チャートコンテナの復元
+        const chartContainers = ['usageChart', 'hourlyChart', 'weeklyChart'];
+        chartContainers.forEach(chartId => {
+            const container = document.getElementById(chartId)?.parentElement;
+            if (container) {
+                container.style.opacity = '1';
+            }
+        });
+    }
+
+    // 非同期ダッシュボード更新
+    async updateDashboardAsync() {
+        try {
+            const chartData = await this.getChartDataWithFallback(this.currentPeriod);
+            this.updateDashboardWithData(chartData);
+            this.hidePeriodChangeLoading();
+        } catch (error) {
+            console.error('Dashboard update failed:', error);
+            this.hidePeriodChangeLoading();
+        }
     }
 
     // DuckDB優先、フォールバック付きデータ取得
@@ -711,6 +738,24 @@ class AppState {
         this.updateUI();
     }
 
+    // ローディング状態を部分的に更新（画面全体を隠さない）
+    setPartialLoading(loading) {
+        this.loading = loading;
+        // ローディングインジケーターのみ更新
+        const refreshButton = document.getElementById('refreshButton');
+        if (refreshButton) {
+            if (loading) {
+                refreshButton.style.opacity = '0.6';
+                refreshButton.style.animation = 'spin 1s linear infinite';
+                refreshButton.disabled = true;
+            } else {
+                refreshButton.style.opacity = '1';
+                refreshButton.style.animation = '';
+                refreshButton.disabled = false;
+            }
+        }
+    }
+
     updateUI() {
         const loadingMessage = document.getElementById('loadingMessage');
         const mainDashboard = document.getElementById('mainDashboard');
@@ -796,64 +841,44 @@ class AppState {
 
 
 
-    // デバッグ用メソッド
-    async debugFileWatcher() {
-        console.log('🔧 === FILE WATCHER DEBUG ===');
-        console.log('🔧 electronAPI available:', !!window.electronAPI);
-        console.log('🔧 startFileWatcher method:', !!window.electronAPI?.startFileWatcher);
-        console.log('🔧 onFileSystemChange method:', !!window.electronAPI?.onFileSystemChange);
-        console.log('🔧 getFileWatcherStatus method:', !!window.electronAPI?.getFileWatcherStatus);
-        
-        try {
-            // Get current status
-            if (window.electronAPI.getFileWatcherStatus) {
-                const status = await window.electronAPI.getFileWatcherStatus();
-                console.log('🔧 Current file watcher status:', status);
-            }
-            
-            console.log('🔧 Attempting to restart file watcher...');
-            const result = await window.electronAPI.startFileWatcher();
-            console.log('🔧 Restart result:', result);
-            
-            // Get status after restart
-            if (window.electronAPI.getFileWatcherStatus) {
-                const statusAfter = await window.electronAPI.getFileWatcherStatus();
-                console.log('🔧 File watcher status after restart:', statusAfter);
-            }
-            
-            // Test notification
-            console.log('🔧 Testing auto-refresh notification...');
-            this.showAutoRefreshNotification();
-            
-            console.log('🔧 === DEBUG COMPLETE ===');
-            console.log('🔧 Use Ctrl+Shift+F to run this debug again');
-            console.log('🔧 Use Ctrl+Shift+T to test file watcher');
-        } catch (error) {
-            console.error('🔧 Debug error:', error);
-        }
-    }
-
-    // ファイル監視テスト用メソッド
-    async testFileWatcher() {
-        console.log('🧪 === FILE WATCHER TEST ===');
+    // DuckDB監視システムテスト用メソッド
+    async testDuckDBMonitoring() {
+        console.log('🦆 === DUCKDB MONITORING TEST ===');
         try {
             if (window.electronAPI.testFileWatcher) {
-                console.log('🧪 Creating test file to trigger file watcher...');
+                console.log('🦆 Testing DuckDB query execution...');
                 const result = await window.electronAPI.testFileWatcher();
-                console.log('🧪 Test result:', result);
+                console.log('🦆 Test result:', result);
                 
                 if (result.success) {
-                    console.log('🧪 Test file created. Watch for file change events in the next few seconds...');
+                    console.log(`🦆 DuckDB monitoring is working! Found ${result.fileCount} log entries.`);
+                    console.log('🦆 Method:', result.method);
+                    
+                    // DuckDBキャッシュクリアテスト
+                    this.duckDBProcessor.clearCache();
+                    console.log('🦆 Cache cleared for fresh data test');
+                    
+                    // データ更新テスト
+                    await this.refreshData();
+                    console.log('🦆 Data refresh completed');
                 } else {
-                    console.error('🧪 Test failed:', result.error);
+                    console.error('🦆 Test failed:', result.error);
                 }
             } else {
-                console.error('🧪 testFileWatcher method not available');
+                console.error('🦆 DuckDB test method not available');
             }
+            
+            // 監視ステータス確認
+            if (window.electronAPI.getFileWatcherStatus) {
+                const status = await window.electronAPI.getFileWatcherStatus();
+                console.log('🦆 Monitoring status:', status);
+            }
+            
         } catch (error) {
-            console.error('🧪 Test error:', error);
+            console.error('🦆 Test error:', error);
         }
-        console.log('🧪 === TEST COMPLETE ===');
+        console.log('🦆 === TEST COMPLETE ===');
+        console.log('🦆 Use Ctrl+Shift+T to run this test again');
     }
 }
 

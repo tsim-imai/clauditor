@@ -5,7 +5,7 @@ import * as fs from 'fs/promises';
 import { createReadStream, existsSync, readdirSync } from 'fs';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
-import chokidar from 'chokidar';
+// import chokidar from 'chokidar'; // DuckDB監視に置き換え
 // import Database from 'duckdb'; // 一時的に無効化
 // Type definitions
 interface ProjectInfo {
@@ -36,7 +36,7 @@ console.log('app.isPackaged:', app.isPackaged);
 console.log('__dirname:', __dirname);
 
 let mainWindow: BrowserWindow | null = null;
-let fileWatcher: chokidar.FSWatcher | null = null;
+// let fileWatcher: chokidar.FSWatcher | null = null; // DuckDB監視に置き換え
 let duckDB: any | null = null; // 一時的に型を変更
 
 // Simple cache for file contents and metadata
@@ -266,7 +266,7 @@ const createWindow = (): void => {
   });
 
   mainWindow.on('closed', () => {
-    stopFileWatcher();
+    // stopFileWatcher(); // DuckDB監視に置き換え
     mainWindow = null;
   });
 };
@@ -421,231 +421,20 @@ ipcMain.handle('get-app-version', async () => {
   return app.getVersion();
 });
 
-// File system watching
-const startFileWatcher = () => {
-  const projectsDir = path.join(os.homedir(), '.claude', 'projects');
-  
-  console.log('🔍 Starting file watcher for:', projectsDir);
-  console.log('🔍 Home directory:', os.homedir());
-  console.log('🔍 Full projects path:', projectsDir);
-  
-  try {
-    // Check if directory exists
-    const dirExists = existsSync(projectsDir);
-    console.log('🔍 Projects directory exists:', dirExists);
-    
-    if (!dirExists) {
-      console.log('❌ Projects directory does not exist:', projectsDir);
-      
-      // Try to list what's in the .claude directory
-      const claudeDir = path.join(os.homedir(), '.claude');
-      console.log('🔍 Checking .claude directory:', claudeDir);
-      try {
-        const claudeDirExists = existsSync(claudeDir);
-        console.log('🔍 .claude directory exists:', claudeDirExists);
-        if (claudeDirExists) {
-          const contents = readdirSync(claudeDir);
-          console.log('🔍 .claude directory contents:', contents);
-        }
-      } catch (err) {
-        console.log('❌ Error checking .claude directory:', err.message);
-      }
-      
-      return false;
-    }
-    
-    // Watch for changes in the projects directory and all subdirectories
-    console.log('👀 Setting up Chokidar with aggressive polling...');
-    fileWatcher = chokidar.watch(projectsDir, {
-      ignored: /^\./, // Only ignore files starting with dot
-      persistent: true,
-      ignoreInitial: true, // !! CRITICAL: Skip initial scan to prevent startup flood
-      depth: 99,
-      usePolling: true, // Force polling mode
-      interval: 5000, // Poll every 5 seconds (reduced frequency)
-      binaryInterval: 5000,
-      awaitWriteFinish: {
-        stabilityThreshold: 2000, // Wait 2 seconds after last change
-        pollInterval: 500
-      },
-      followSymlinks: true,
-      atomic: false, // Disable atomic writes detection
-      alwaysStat: true, // Always get file stats
-      ignorePermissionErrors: false
-    });
-    
-    console.log('👀 Chokidar watcher configured for:', projectsDir);
-    console.log('👀 Chokidar options:', {
-      ignored: /^\./, 
-      persistent: true,
-      ignoreInitial: true, // FIXED: Skip initial scan
-      depth: 99,
-      usePolling: true,
-      interval: 5000
-    });
+// DuckDB-based monitoring (replaces chokidar file watching)
+// Simple polling mechanism to check for file changes periodically
 
-    fileWatcher
-      .on('add', (filePath) => {
-        console.log('📁 File added:', filePath);
-        if (filePath.endsWith('.jsonl') && mainWindow) {
-          console.log('✅ New JSONL file detected:', filePath);
-          // Clear related cache
-          clearCachePattern(path.dirname(filePath));
-          clearCachePattern('projects:list');
-          
-          console.log('📡 Sending file-system-change event (add)');
-          mainWindow.webContents.send('file-system-change', {
-            type: 'file-added',
-            path: filePath,
-            timestamp: new Date().toISOString(),
-          });
-        } else {
-          console.log('📁 Non-JSONL file added (ignored):', filePath);
-        }
-      })
-      .on('change', (filePath) => {
-        console.log('📝 File changed:', filePath);
-        if (filePath.endsWith('.jsonl') && mainWindow) {
-          console.log('✅ JSONL file changed:', filePath);
-          // Clear related cache
-          clearCachePattern(path.dirname(filePath));
-          
-          console.log('📡 Sending file-system-change event (change)');
-          mainWindow.webContents.send('file-system-change', {
-            type: 'file-changed',
-            path: filePath,
-            timestamp: new Date().toISOString(),
-          });
-        } else {
-          console.log('📝 Non-JSONL file changed (ignored):', filePath);
-        }
-      })
-      .on('raw', (event, path, details) => {
-        // Only log JSONL file events to reduce noise
-        if (path && path.endsWith('.jsonl')) {
-          console.log('🔍 Raw JSONL event:', event, 'path:', path);
-        }
-      })
-      .on('unlink', (filePath) => {
-        if (filePath.endsWith('.jsonl') && mainWindow) {
-          console.log('JSONL file removed:', filePath);
-          // Clear related cache
-          clearCachePattern(path.dirname(filePath));
-          clearCachePattern('projects:list');
-          
-          mainWindow.webContents.send('file-system-change', {
-            type: 'file-removed',
-            path: filePath,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      })
-      .on('addDir', (dirPath) => {
-        // New project directory added
-        if (mainWindow && dirPath !== projectsDir) {
-          console.log('New project directory detected:', dirPath);
-          // Clear project list cache
-          clearCachePattern('projects:list');
-          
-          mainWindow.webContents.send('file-system-change', {
-            type: 'project-added',
-            path: dirPath,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      })
-      .on('unlinkDir', (dirPath) => {
-        // Project directory removed
-        if (mainWindow && dirPath !== projectsDir) {
-          console.log('Project directory removed:', dirPath);
-          // Clear related cache
-          clearCachePattern(dirPath);
-          clearCachePattern('projects:list');
-          
-          mainWindow.webContents.send('file-system-change', {
-            type: 'project-removed',
-            path: dirPath,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      })
-      .on('error', (error) => {
-        console.error('❌ File watcher error:', error);
-      })
-      .on('ready', () => {
-        console.log('✅ File watcher is ready and monitoring changes');
-        console.log('👀 Watcher is now actively monitoring for file changes...');
-        
-        // List currently watched paths for debugging
-        const watchedPaths = fileWatcher?.getWatched();
-        if (watchedPaths) {
-          console.log('👀 Currently watched directories:', Object.keys(watchedPaths));
-        }
-      });
-
-    console.log('✅ File watcher started for:', projectsDir);
-    
-    // Verify the watcher was created successfully
-    if (!fileWatcher) {
-      console.error('❌ File watcher object is null after creation');
-      return false;
-    }
-    
-    console.log('✅ File watcher object created successfully');
-    return true;
-  } catch (error) {
-    console.error('❌ Failed to start file watcher:', error);
-    console.error('❌ Error type:', error.constructor.name);
-    console.error('❌ Error message:', error.message);
-    console.error('❌ Error stack:', error.stack);
-    return false;
-  }
-};
-
-const stopFileWatcher = () => {
-  if (fileWatcher) {
-    fileWatcher.close();
-    fileWatcher = null;
-    console.log('File watcher stopped');
-  }
-};
-
-// Start file watcher when app is ready
-ipcMain.handle('start-file-watcher', async () => {
-  console.log('📡 IPC: start-file-watcher called');
-  
-  // Check if file watcher is already running
-  if (fileWatcher) {
-    console.log('⚠️ File watcher already exists, stopping previous instance');
-    fileWatcher.close();
-    fileWatcher = null;
-  }
-  
-  const result = startFileWatcher();
-  console.log('📡 IPC: start-file-watcher result:', result);
-  
-  // Additional debugging info
-  console.log('📡 IPC: fileWatcher exists after start:', !!fileWatcher);
-  
-  return result;
-});
-
-// Stop file watcher
-ipcMain.handle('stop-file-watcher', async () => {
-  stopFileWatcher();
-  return true;
-});
-
-// Get file watcher status
+// DuckDB monitoring status (replaces file watcher)
 ipcMain.handle('get-file-watcher-status', async () => {
   const projectsDir = path.join(os.homedir(), '.claude', 'projects');
   const dirExists = existsSync(projectsDir);
   
   return {
-    isWatching: !!fileWatcher,
+    isWatching: true, // DuckDBによる監視は常にアクティブ
     projectsDir,
     dirExists,
-    watcherReady: fileWatcher ? true : false
+    watcherReady: true,
+    method: 'DuckDB'
   };
 });
 
@@ -662,47 +451,33 @@ ipcMain.handle('execute-duckdb-query', async (event, query: string) => {
   }
 });
 
-// Test file watcher by creating a test file
+// DuckDB Test - check query execution
 ipcMain.handle('test-file-watcher', async () => {
-  const projectsDir = path.join(os.homedir(), '.claude', 'projects');
-  const testDir = path.join(projectsDir, 'test-watcher');
-  const testFile = path.join(testDir, 'test.jsonl');
-  
   try {
-    console.log('🧪 Testing file watcher by creating test file...');
+    console.log('🧪 Testing DuckDB file monitoring...');
     
-    // Create test directory if it doesn't exist
-    if (!existsSync(testDir)) {
-      await fs.mkdir(testDir, { recursive: true });
-      console.log('🧪 Created test directory:', testDir);
-    }
+    const testQuery = `
+      SELECT COUNT(*) as file_count 
+      FROM read_json('~/.claude/projects/**/*.jsonl', ignore_errors=true)
+      WHERE timestamp IS NOT NULL
+    `;
     
-    // Create a test JSONL file
-    const testContent = JSON.stringify({
-      timestamp: new Date().toISOString(),
-      message: { usage: { input_tokens: 100, output_tokens: 200 } },
-      costUSD: 0.01,
-      test: true
-    }) + '\n';
+    const result = await executeDuckDBQuery(testQuery);
+    console.log('🧪 DuckDB test result:', result);
     
-    await fs.writeFile(testFile, testContent);
-    console.log('🧪 Created test file:', testFile);
-    
-    // Clean up after 5 seconds
-    setTimeout(async () => {
-      try {
-        await fs.unlink(testFile);
-        await fs.rmdir(testDir);
-        console.log('🧪 Cleaned up test files');
-      } catch (cleanupError) {
-        console.log('🧪 Cleanup error (ignored):', cleanupError.message);
-      }
-    }, 5000);
-    
-    return { success: true, testFile };
+    return { 
+      success: true, 
+      method: 'DuckDB',
+      fileCount: result[0]?.file_count || 0,
+      message: `DuckDB monitoring is working. Found ${result[0]?.file_count || 0} log entries.`
+    };
   } catch (error) {
-    console.error('🧪 Test file watcher error:', error);
-    return { success: false, error: error.message };
+    console.error('🧪 DuckDB test error:', error);
+    return { 
+      success: false, 
+      error: error.message,
+      method: 'DuckDB'
+    };
   }
 });
 

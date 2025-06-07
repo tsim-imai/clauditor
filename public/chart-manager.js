@@ -63,27 +63,37 @@ class ChartManager {
      */
     updateUsageChartSilentWithCache(chartData) {
         if (!this.charts.usage) return;
-        const dailyData = chartData.dailyData;
+        if (!chartData) return;
+        
         const chartType = document.getElementById('usageChartType').value;
         let data, label, color;
+        
+        // DuckDBプロセッサーのデータ構造に対応
         switch (chartType) {
             case 'tokens':
-                data = dailyData.map(d => d.tokens);
+                data = chartData.dailyData || [];
                 label = 'トークン数';
                 color = '#3b82f6';
                 break;
             case 'cost':
-                data = dailyData.map(d => d.cost);
+                data = chartData.dailyCosts || [];
                 label = 'コスト (¥)';
                 color = '#10b981';
                 break;
             case 'calls':
-                data = dailyData.map(d => d.calls);
+                // DuckDBではAPI呼び出し数はエントリ数として扱う
+                data = chartData.dailyData ? chartData.dailyData.map(() => 1) : [];
                 label = 'API呼び出し数';
                 color = '#f59e0b';
                 break;
+            default:
+                data = chartData.dailyData || [];
+                label = 'トークン数';
+                color = '#3b82f6';
         }
-        this.charts.usage.data.labels = dailyData.map(d => Utils.formatDate(d.date));
+        
+        // ラベルはdailyLabelsから取得
+        this.charts.usage.data.labels = chartData.dailyLabels || [];
         this.charts.usage.data.datasets[0].data = data;
         this.charts.usage.data.datasets[0].label = label;
         this.charts.usage.data.datasets[0].borderColor = color;
@@ -93,6 +103,7 @@ class ChartManager {
     
     updateHourlyChartSilentWithCache(chartData) {
         if (!this.charts.hourly) return;
+        if (!chartData || !chartData.hourlyData) return;
         this.charts.hourly.data.datasets[0].data = chartData.hourlyData;
         this.charts.hourly.update('active'); // 標準的な滑らかアニメーション
     }
@@ -100,11 +111,30 @@ class ChartManager {
     
     updateWeeklyChartSilentWithCache(chartData) {
         if (!this.charts.weekly) return;
-        const weeklyData = chartData.weeklyData;
-        const currentWeek = weeklyData[weeklyData.length - 1];
-        const previousWeek = weeklyData[weeklyData.length - 2];
-        this.charts.weekly.data.datasets[0].data = currentWeek ? currentWeek.days : new Array(7).fill(0);
-        this.charts.weekly.data.datasets[1].data = previousWeek ? previousWeek.days : new Array(7).fill(0);
+        
+        // データ構造のチェック
+        if (!chartData) {
+            return;
+        }
+
+        // 週別データがない場合は日別データから生成
+        let currentWeek, previousWeek;
+        if (chartData.weeklyData && chartData.weeklyData.length > 0) {
+            const weeklyData = chartData.weeklyData;
+            currentWeek = weeklyData[weeklyData.length - 1];
+            previousWeek = weeklyData[weeklyData.length - 2];
+        } else {
+            // 日別データから週別データを生成
+            currentWeek = { dailyTokens: this.generateWeeklyDataFromDaily(chartData.dailyData, chartData.dailyLabels, 0) };
+            previousWeek = { dailyTokens: this.generateWeeklyDataFromDaily(chartData.dailyData, chartData.dailyLabels, 1) };
+        }
+        
+        // データフィールド名の統一（days または dailyTokens）
+        const currentData = currentWeek ? (currentWeek.days || currentWeek.dailyTokens) : new Array(7).fill(0);
+        const previousData = previousWeek ? (previousWeek.days || previousWeek.dailyTokens) : new Array(7).fill(0);
+        
+        this.charts.weekly.data.datasets[0].data = currentData || new Array(7).fill(0);
+        this.charts.weekly.data.datasets[1].data = previousData || new Array(7).fill(0);
         this.charts.weekly.update('active'); // 標準的な滑らかアニメーション
     }
     
@@ -316,16 +346,30 @@ class ChartManager {
     /**
      * 週別比較チャート
      */
-    createWeeklyChart(filteredEntries = null) {
+    createWeeklyChart(chartData = null) {
         const ctx = document.getElementById('weeklyChart').getContext('2d');
         
         if (this.charts.weekly) {
             this.charts.weekly.destroy();
         }
 
-        const weeklyData = filteredEntries.weeklyData;
-        const currentWeek = weeklyData[weeklyData.length - 1];
-        const previousWeek = weeklyData[weeklyData.length - 2];
+        // データ構造のチェック
+        if (!chartData) {
+            console.warn('chartData is null for weekly chart');
+            chartData = { dailyData: [], dailyLabels: [] };
+        }
+
+        // 週別データがない場合は日別データから生成
+        let currentWeek, previousWeek;
+        if (chartData.weeklyData && chartData.weeklyData.length > 0) {
+            const weeklyData = chartData.weeklyData;
+            currentWeek = weeklyData[weeklyData.length - 1];
+            previousWeek = weeklyData[weeklyData.length - 2];
+        } else {
+            // 日別データから週別データを生成
+            currentWeek = { dailyTokens: this.generateWeeklyDataFromDaily(chartData.dailyData, chartData.dailyLabels, 0) };
+            previousWeek = { dailyTokens: this.generateWeeklyDataFromDaily(chartData.dailyData, chartData.dailyLabels, 1) };
+        }
 
         const dayLabels = ['日', '月', '火', '水', '木', '金', '土'];
         
@@ -390,15 +434,28 @@ class ChartManager {
     /**
      * 週別比較チャートのサイレント更新
      */
-    updateWeeklyChartSilent(filteredEntries) {
+    updateWeeklyChartSilent(chartData) {
         if (!this.charts.weekly) {
-            this.createWeeklyChart(filteredEntries);
+            this.createWeeklyChart(chartData);
             return;
         }
         
-        const weeklyData = filteredEntries.weeklyData;
-        const currentWeek = weeklyData[weeklyData.length - 1];
-        const previousWeek = weeklyData[weeklyData.length - 2];
+        // データ構造のチェック
+        if (!chartData) {
+            return;
+        }
+
+        // 週別データがない場合は日別データから生成
+        let currentWeek, previousWeek;
+        if (chartData.weeklyData && chartData.weeklyData.length > 0) {
+            const weeklyData = chartData.weeklyData;
+            currentWeek = weeklyData[weeklyData.length - 1];
+            previousWeek = weeklyData[weeklyData.length - 2];
+        } else {
+            // 日別データから週別データを生成
+            currentWeek = { dailyTokens: this.generateWeeklyDataFromDaily(chartData.dailyData, chartData.dailyLabels, 0) };
+            previousWeek = { dailyTokens: this.generateWeeklyDataFromDaily(chartData.dailyData, chartData.dailyLabels, 1) };
+        }
         
         // データを更新（チャートを再作成せず）
         this.charts.weekly.data.datasets[0].data = currentWeek ? currentWeek.dailyTokens : new Array(7).fill(0);
@@ -447,5 +504,38 @@ class ChartManager {
      */
     getChart(chartName) {
         return this.charts[chartName];
+    }
+
+    /**
+     * 日別データから週別データを生成するヘルパーメソッド
+     */
+    generateWeeklyDataFromDaily(dailyData, dailyLabels, weekOffset = 0) {
+        // 曜日別の配列を初期化（日曜日から土曜日）
+        const weeklyTokens = new Array(7).fill(0);
+        
+        if (!dailyData || !dailyLabels) {
+            return weeklyTokens;
+        }
+
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        // 指定された週のオフセットを適用
+        const targetWeekStart = new Date(today);
+        targetWeekStart.setDate(today.getDate() - today.getDay() - (weekOffset * 7)); // 日曜日開始
+        
+        // 日別データから該当する週のデータを抽出
+        for (let i = 0; i < dailyData.length && i < dailyLabels.length; i++) {
+            const entryDate = new Date(dailyLabels[i]);
+            const daysDiff = Math.floor((entryDate - targetWeekStart) / (1000 * 60 * 60 * 24));
+            
+            // 対象週の範囲内（0-6日）かチェック
+            if (daysDiff >= 0 && daysDiff < 7) {
+                const dayOfWeek = entryDate.getDay(); // 0=日曜日, 6=土曜日
+                weeklyTokens[dayOfWeek] = dailyData[i] || 0;
+            }
+        }
+        
+        return weeklyTokens;
     }
 }

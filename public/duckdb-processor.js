@@ -6,6 +6,8 @@ class DuckDBDataProcessor {
     constructor() {
         this.cache = new Map();
         this.cacheTime = 30000; // 30秒キャッシュ
+        this.fastCache = new Map(); // 高速キャッシュ（期間フィルタリング用）
+        this.fastCacheTime = 5000; // 5秒キャッシュ（期間変更の高頻度対応）
         // ユーザーのホームディレクトリを取得してフルパスに変換
         this.projectsPath = this.getProjectsPath();
     }
@@ -66,10 +68,20 @@ class DuckDBDataProcessor {
      */
     async getChartCompatibleData(period) {
         const cacheKey = `chart:${period}`;
-        const cached = this.cache.get(cacheKey);
         
+        // 高速キャッシュをまずチェック（期間変更の高頻度対応）
+        const fastCached = this.fastCache.get(cacheKey);
+        if (fastCached && Date.now() - fastCached.timestamp < this.fastCacheTime) {
+            console.log(`⚡ DuckDB Fast Cache hit: ${cacheKey}`);
+            return fastCached.data;
+        }
+        
+        // 通常キャッシュをチェック
+        const cached = this.cache.get(cacheKey);
         if (cached && Date.now() - cached.timestamp < this.cacheTime) {
             console.log(`🚀 DuckDB Cache hit: ${cacheKey}`);
+            // 高速キャッシュにもコピー
+            this.fastCache.set(cacheKey, { data: cached.data, timestamp: Date.now() });
             return cached.data;
         }
 
@@ -152,8 +164,10 @@ class DuckDBDataProcessor {
             // データを処理してChart.js互換形式に変換
             const chartData = this.formatChartData(dailyData, hourlyData, projectData, statsData[0]);
             
-            // キャッシュに保存
-            this.cache.set(cacheKey, { data: chartData, timestamp: Date.now() });
+            // 両方のキャッシュに保存
+            const cacheEntry = { data: chartData, timestamp: Date.now() };
+            this.cache.set(cacheKey, cacheEntry);
+            this.fastCache.set(cacheKey, cacheEntry);
             
             console.timeEnd('🚀 DuckDB Query Execution');
             console.log(`📊 DuckDB処理完了: ${dailyData.length}日分, ${projectData.length}プロジェクト`);
@@ -248,6 +262,7 @@ class DuckDBDataProcessor {
     clearCache() {
         console.log('🧹 DuckDB キャッシュクリア');
         this.cache.clear();
+        this.fastCache.clear();
     }
 
     /**
@@ -258,6 +273,11 @@ class DuckDBDataProcessor {
         for (const [key] of this.cache) {
             if (key.includes(pattern)) {
                 this.cache.delete(key);
+            }
+        }
+        for (const [key] of this.fastCache) {
+            if (key.includes(pattern)) {
+                this.fastCache.delete(key);
             }
         }
     }

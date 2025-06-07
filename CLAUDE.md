@@ -8,11 +8,12 @@ Clauditor is an Electron desktop application that analyzes Claude Code API usage
 
 **Key Architecture:**
 - **Electron-only architecture** with Vanilla HTML+JS+CSS frontend
+- **Dual data processing**: DuckDB CLI integration with AdvancedLogDataProcessor fallback
 - **Time-centric dashboard** with dynamic period filtering and Chart.js integration
 - **Calendar view** with daily usage heatmap and detailed analysis
 - **Exchange rate integration** with automatic API fetching
 - **Native file system access** via Electron IPC with chokidar for real-time monitoring
-- **LRU caching system** for performance optimization
+- **High-performance caching** with LRU and DuckDB query optimization
 - **Streaming JSONL processing** for large files (>10MB)
 
 ## Development Commands
@@ -89,12 +90,21 @@ npm run dist           # Build all platforms without publishing
 
 ### Data Processing Flow
 1. **Project scanning**: Recursively scan `~/.claude/projects/` for directories containing `.jsonl` files
-2. **Log parsing**: Stream-parse JSONL files, filter valid entries with usage data
+2. **High-speed data processing**: 
+   - **Primary**: DuckDB CLI with direct SQL queries on JSONL files
+   - **Fallback**: AdvancedLogDataProcessor with stream parsing
 3. **Data aggregation**: 
    - Daily aggregation for calendar view
    - Period-based filtering for dashboard
    - Project-based grouping for charts
 4. **Real-time updates**: chokidar watches for file changes and triggers data refresh
+
+### DuckDB Integration Architecture
+- **Command-line execution**: Uses `child_process` to execute DuckDB CLI with `-json` flag
+- **SQL-powered analytics**: Direct queries on JSONL files without intermediate processing
+- **Error handling**: Automatic fallback to traditional processing on DuckDB failures
+- **Performance optimization**: Eliminates 5x duplicate data loading, reduces Cache hit frequency
+- **Query patterns**: Adapted from high-performance `test.sh` SQL patterns for optimal speed
 
 ## Important Implementation Notes
 
@@ -107,10 +117,13 @@ The preload script MUST use CommonJS format (`require()`) not ES6 imports. The v
 - Path validation happens in main process for security
 
 ### Performance Considerations
-- Files >10MB use streaming processing
-- LRU cache with 5-minute TTL and file modification time checks
-- Throttled file system events to prevent UI flooding
-- Chart.js optimization with responsive settings and theme switching
+- **DuckDB priority**: Primary data processing uses DuckDB CLI for maximum speed
+- **Intelligent fallback**: Automatic AdvancedLogDataProcessor fallback on DuckDB errors
+- **Optimized initialization**: Single data fetch replaces previous 5x duplicate loading
+- **Files >10MB**: Stream processing in fallback mode
+- **LRU cache**: 5-minute TTL with file modification time checks (30-second cache for DuckDB)
+- **Throttled events**: File system monitoring optimized to prevent UI flooding
+- **Chart.js optimization**: Responsive settings and theme switching
 
 ### Chart.js Integration
 - **Responsive design**: All charts adapt to container size
@@ -126,10 +139,13 @@ The preload script MUST use CommonJS format (`require()`) not ES6 imports. The v
 
 ## Key Files to Understand
 
-- `electron/main.ts` - Electron main process with file operations, caching, and exchange rate API
-- `public/app.js` - Main application logic with Chart.js integration and view management
+- `electron/main.ts` - Electron main process with file operations, DuckDB CLI integration, caching, and exchange rate API
+- `public/app.js` - Main application logic with Chart.js integration, DuckDB fallback handling, and view management
+- `public/duckdb-processor.js` - High-performance DuckDB CLI data processor with SQL query optimization
+- `public/advanced-log-processor.js` - Traditional JSONL processor used as fallback
 - `public/index.html` - Complete UI structure with dashboard and calendar views
 - `public/styles.css` - Modern CSS with custom properties and responsive design
+- `test.sh` - Reference implementation showing DuckDB query patterns and performance benchmarks
 - `vite.config.ts` - Build configuration for Electron + Vanilla frontend
 
 ## Data Format
@@ -151,6 +167,18 @@ The current implementation uses Vanilla HTML+JS+CSS for the frontend, replacing 
 - Direct Chart.js integration
 - Better theme control
 - Reduced bundle size
+
+### DuckDB vs Traditional Processing
+**When DuckDB is used:**
+- Direct SQL queries on JSONL files via CLI
+- JSON output parsing with automatic fallback
+- Optimized query patterns from `test.sh`
+- Significant performance improvements for large datasets
+
+**When fallback is used:**
+- DuckDB CLI execution errors
+- Network or permission issues
+- Maintains full functionality with AdvancedLogDataProcessor
 
 ### Chart.js Best Practices
 - Always destroy previous chart instances before creating new ones
