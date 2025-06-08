@@ -18,6 +18,8 @@ export class ChartManager {
      */
     updateSettings(settings) {
         this.settings = settings;
+        // 設定変更時（ダークモード切り替え時）にチャートテーマを更新
+        this.updateChartsTheme();
     }
 
     /**
@@ -249,7 +251,7 @@ export class ChartManager {
                     y: {
                         beginAtZero: true,
                         grid: {
-                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#475569' : '#e2e8f0'
                         },
                         ticks: {
                             color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
@@ -258,7 +260,7 @@ export class ChartManager {
                     x: {
                         type: 'category',
                         grid: {
-                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#475569' : '#e2e8f0'
                         },
                         ticks: {
                             color: this.settings?.darkMode ? '#cbd5e1' : '#64748b',
@@ -320,7 +322,7 @@ export class ChartManager {
                     y: {
                         beginAtZero: true,
                         grid: {
-                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#475569' : '#e2e8f0'
                         },
                         ticks: {
                             color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
@@ -328,7 +330,7 @@ export class ChartManager {
                     },
                     x: {
                         grid: {
-                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#475569' : '#e2e8f0'
                         },
                         ticks: {
                             color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
@@ -434,7 +436,7 @@ export class ChartManager {
                     y: {
                         beginAtZero: true,
                         grid: {
-                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#475569' : '#e2e8f0'
                         },
                         ticks: {
                             color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
@@ -442,7 +444,7 @@ export class ChartManager {
                     },
                     x: {
                         grid: {
-                            color: this.settings?.darkMode ? '#334155' : '#e2e8f0'
+                            color: this.settings?.darkMode ? '#475569' : '#e2e8f0'
                         },
                         ticks: {
                             color: this.settings?.darkMode ? '#cbd5e1' : '#64748b'
@@ -502,12 +504,31 @@ export class ChartManager {
      * チャートテーマを更新
      */
     updateChartsTheme() {
-        // チャートを再作成してテーマを適用
-        setTimeout(() => {
-            if (this.charts.usage) this.charts.usage.destroy();
-            if (this.charts.hourly) this.charts.hourly.destroy();
-            if (this.charts.weekly) this.charts.weekly.destroy();
-        }, 100);
+        const isDark = this.settings?.darkMode;
+        const gridColor = isDark ? '#475569' : '#e2e8f0';
+        const tickColor = isDark ? '#cbd5e1' : '#64748b';
+        
+        // 各チャートのグリッド色とティック色を動的に更新
+        Object.values(this.charts).forEach(chart => {
+            if (chart && chart.options && chart.options.scales) {
+                // X軸とY軸のグリッド色を更新
+                if (chart.options.scales.x && chart.options.scales.x.grid) {
+                    chart.options.scales.x.grid.color = gridColor;
+                }
+                if (chart.options.scales.x && chart.options.scales.x.ticks) {
+                    chart.options.scales.x.ticks.color = tickColor;
+                }
+                if (chart.options.scales.y && chart.options.scales.y.grid) {
+                    chart.options.scales.y.grid.color = gridColor;
+                }
+                if (chart.options.scales.y && chart.options.scales.y.ticks) {
+                    chart.options.scales.y.ticks.color = tickColor;
+                }
+                
+                // チャートを再描画
+                chart.update('none'); // アニメーションなしで即座に更新
+            }
+        });
     }
 
     /**

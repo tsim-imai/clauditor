@@ -531,12 +531,12 @@ export class MiniModeManager {
                 scales: {
                     x: {
                         display: true,
-                        grid: { display: true, color: 'rgba(0, 0, 0, 0.1)' },
+                        grid: { display: true, color: this.settings?.darkMode ? '#475569' : 'rgba(0, 0, 0, 0.1)' },
                         ticks: { font: { size: 8 }, maxTicksLimit: 6 }
                     },
                     y: {
                         display: true,
-                        grid: { display: true, color: 'rgba(0, 0, 0, 0.1)' },
+                        grid: { display: true, color: this.settings?.darkMode ? '#475569' : 'rgba(0, 0, 0, 0.1)' },
                         ticks: {
                             font: { size: 8 },
                             callback: function(value) {
@@ -749,7 +749,7 @@ export class MiniModeManager {
                         display: true,
                         grid: {
                             display: true,
-                            color: 'rgba(0, 0, 0, 0.1)'
+                            color: this.settings?.darkMode ? '#475569' : 'rgba(0, 0, 0, 0.1)'
                         },
                         ticks: {
                             font: {
@@ -762,7 +762,7 @@ export class MiniModeManager {
                         display: true,
                         grid: {
                             display: true,
-                            color: 'rgba(0, 0, 0, 0.1)'
+                            color: this.settings?.darkMode ? '#475569' : 'rgba(0, 0, 0, 0.1)'
                         },
                         ticks: {
                             font: {
