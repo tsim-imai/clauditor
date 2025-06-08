@@ -982,24 +982,79 @@ body {
 
 /* 今日 */
 .calendar-day.today {
-    background: linear-gradient(135deg, var(--accent-color), var(--success-color));
+    background: linear-gradient(135deg, var(--success-color), #059669);
     color: white;
     font-weight: 600;
-    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+    border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 .calendar-day.today .day-number {
     font-weight: 700;
 }
 
-/* 選択された日 */
+/* 今日かつ選択された場合は選択状態を優先 */
+.calendar-day.today.selected {
+    background: linear-gradient(135deg, var(--accent-color), #1d4ed8);
+    border: 2px solid transparent;
+}
+
+/* 選択された日（Active状態） */
 .calendar-day.selected {
     background: linear-gradient(135deg, var(--accent-color), #1d4ed8);
     color: white;
-    transform: scale(1.05);
-    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
-    border-color: rgba(255, 255, 255, 0.3);
-    z-index: 10;
+    transform: scale(1.08);
+    box-shadow: 
+        0 0 0 3px rgba(255, 255, 255, 0.3),
+        0 0 0 6px var(--accent-color),
+        0 12px 30px rgba(59, 130, 246, 0.5);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    z-index: 15;
+    animation: selectedPulse 3s ease-in-out infinite;
+    position: relative;
+}
+
+/* 選択された日の動くボーダー */
+.calendar-day.selected::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: -4px;
+    right: -4px;
+    bottom: -4px;
+    background: linear-gradient(45deg, 
+        #60a5fa, #3b82f6, #1d4ed8, #2563eb, 
+        #60a5fa, #3b82f6, #1d4ed8, #2563eb);
+    background-size: 400% 400%;
+    border-radius: var(--border-radius);
+    z-index: -1;
+    animation: gradientBorder 2s ease infinite;
+}
+
+/* 選択された日のパルスアニメーション */
+@keyframes selectedPulse {
+    0%, 100% { 
+        transform: scale(1.08);
+        box-shadow: 
+            0 0 0 3px rgba(255, 255, 255, 0.3),
+            0 0 0 6px var(--accent-color),
+            0 12px 30px rgba(59, 130, 246, 0.5);
+    }
+    50% { 
+        transform: scale(1.12);
+        box-shadow: 
+            0 0 0 4px rgba(255, 255, 255, 0.4),
+            0 0 0 8px var(--accent-color),
+            0 16px 40px rgba(59, 130, 246, 0.6);
+    }
+}
+
+/* 動くグラデーションボーダー */
+@keyframes gradientBorder {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
 }
 
 /* フォーカス状態 */
@@ -1009,21 +1064,33 @@ body {
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
-/* 使用量がある日 */
-.calendar-day.has-usage {
-    position: relative;
-}
-
-.calendar-day.has-usage::before {
+/* 使用量がある日の光るインジケーター */
+.calendar-day.has-usage::after {
     content: '';
     position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 6px;
-    height: 6px;
+    top: 6px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: var(--accent-color);
-    box-shadow: 0 0 6px rgba(59, 130, 246, 0.6);
+    background: #10b981; /* エメラルドグリーン */
+    box-shadow: 
+        0 0 8px rgba(16, 185, 129, 0.8),
+        0 0 16px rgba(16, 185, 129, 0.4);
+    animation: pulse 2s ease-in-out infinite;
+    z-index: 10;
+}
+
+/* 光る丸のパルスアニメーション */
+@keyframes pulse {
+    0%, 100% { 
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% { 
+        transform: scale(1.3);
+        opacity: 0.7;
+    }
 }
 
 /* 日付番号 */
@@ -1114,8 +1181,8 @@ body {
     box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
 }
 
-/* レベル別の光る効果 */
-.calendar-day.level-4::after {
+/* レベル別の光る効果（背景用） */
+.calendar-day.level-4::before {
     content: '';
     position: absolute;
     top: -2px;
@@ -1129,7 +1196,7 @@ body {
     transition: opacity 0.3s ease;
 }
 
-.calendar-day.level-4:hover::after {
+.calendar-day.level-4:hover::before {
     opacity: 0.3;
     animation: glow 2s ease-in-out infinite alternate;
 }
