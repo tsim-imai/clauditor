@@ -937,82 +937,207 @@ body {
 .calendar-days {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
+    gap: 0;
+    padding: 8px;
+    background: linear-gradient(135deg, var(--surface-color), var(--surface-secondary));
+    border-radius: var(--border-radius-lg);
 }
 
+/* モダンカレンダーデザイン */
 .calendar-day {
     aspect-ratio: 1;
-    border-right: 1px solid var(--border-light);
-    border-bottom: 1px solid var(--border-light);
+    border-radius: var(--border-radius);
+    margin: 2px;
     padding: 0.75rem;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     background-color: var(--surface-color);
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-start;
+    align-items: flex-start;
+    border: 2px solid transparent;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    backdrop-filter: blur(10px);
 }
 
-.calendar-day:nth-child(7n) {
-    border-right: none;
-}
-
+/* ホバー効果 */
 .calendar-day:hover {
-    background-color: var(--surface-secondary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-color: var(--accent-color);
 }
 
+/* 他の月の日付 */
 .calendar-day.other-month {
     color: var(--text-muted);
-    background-color: var(--surface-secondary);
+    background-color: rgba(var(--surface-secondary-rgb), 0.3);
+    opacity: 0.6;
 }
 
-.calendar-day.today {
-    background-color: var(--accent-light);
-    color: var(--accent-color);
-    font-weight: 600;
-}
-
-.calendar-day.selected {
-    background-color: var(--accent-color);
-    color: white;
-}
-
-.calendar-day.has-usage {
-    border-left: 4px solid var(--accent-color);
-}
-
-.day-number {
-    font-size: 0.9rem;
-    font-weight: 500;
-}
-
-.day-usage {
-    font-size: 0.7rem;
-    margin-top: 0.25rem;
+.calendar-day.other-month:hover {
     opacity: 0.8;
 }
 
-.usage-indicator {
-    position: absolute;
-    bottom: 0.25rem;
-    right: 0.25rem;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: var(--accent-color);
+/* 今日 */
+.calendar-day.today {
+    background: linear-gradient(135deg, var(--accent-color), var(--success-color));
+    color: white;
+    font-weight: 600;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
 }
 
-/* 使用量レベル色分け */
-.calendar-day.level-0 { background-color: var(--surface-color); }
-.calendar-day.level-1 { background-color: #dbeafe; }
-.calendar-day.level-2 { background-color: #bfdbfe; }
-.calendar-day.level-3 { background-color: #93c5fd; }
-.calendar-day.level-4 { background-color: #60a5fa; color: white; }
+.calendar-day.today .day-number {
+    font-weight: 700;
+}
 
-[data-theme="dark"] .calendar-day.level-1 { background-color: #1e3a8a; }
-[data-theme="dark"] .calendar-day.level-2 { background-color: #1e40af; }
-[data-theme="dark"] .calendar-day.level-3 { background-color: #1d4ed8; }
-[data-theme="dark"] .calendar-day.level-4 { background-color: #2563eb; }
+/* 選択された日 */
+.calendar-day.selected {
+    background: linear-gradient(135deg, var(--accent-color), #1d4ed8);
+    color: white;
+    transform: scale(1.05);
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+    border-color: rgba(255, 255, 255, 0.3);
+    z-index: 10;
+}
+
+/* フォーカス状態 */
+.calendar-day:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+/* 使用量がある日 */
+.calendar-day.has-usage {
+    position: relative;
+}
+
+.calendar-day.has-usage::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    box-shadow: 0 0 6px rgba(59, 130, 246, 0.6);
+}
+
+/* 日付番号 */
+.day-number {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: inherit;
+    margin-bottom: 0.25rem;
+}
+
+/* 使用量表示 */
+.day-usage {
+    font-size: 0.65rem;
+    font-weight: 500;
+    opacity: 0.9;
+    background: rgba(255, 255, 255, 0.15);
+    padding: 2px 6px;
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+    margin-top: auto;
+}
+
+/* モダン使用量レベル色分け - グラデーションベース */
+.calendar-day.level-0 { 
+    background: var(--surface-color);
+    border: 1px solid var(--border-light);
+}
+
+.calendar-day.level-1 { 
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+}
+
+.calendar-day.level-2 { 
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    color: #1d4ed8;
+    border: 1px solid #93c5fd;
+}
+
+.calendar-day.level-3 { 
+    background: linear-gradient(135deg, #93c5fd, #60a5fa);
+    color: white;
+    border: 1px solid #3b82f6;
+    box-shadow: 0 4px 15px rgba(147, 197, 253, 0.3);
+}
+
+.calendar-day.level-4 { 
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    color: white;
+    border: 1px solid #1e40af;
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+    font-weight: 600;
+}
+
+/* ダークモード用の使用量レベル */
+[data-theme="dark"] .calendar-day.level-1 { 
+    background: linear-gradient(135deg, #1e3a8a, #1e40af);
+    color: #bfdbfe;
+    border: 1px solid #3b82f6;
+}
+
+[data-theme="dark"] .calendar-day.level-2 { 
+    background: linear-gradient(135deg, #1e40af, #1d4ed8);
+    color: #dbeafe;
+    border: 1px solid #3b82f6;
+}
+
+[data-theme="dark"] .calendar-day.level-3 { 
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    color: white;
+    border: 1px solid #60a5fa;
+    box-shadow: 0 4px 15px rgba(29, 78, 216, 0.4);
+}
+
+[data-theme="dark"] .calendar-day.level-4 { 
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    color: white;
+    border: 1px solid #60a5fa;
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5);
+    font-weight: 600;
+}
+
+/* 高使用量日のアニメーション効果 */
+.calendar-day.level-3:hover,
+.calendar-day.level-4:hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+}
+
+/* レベル別の光る効果 */
+.calendar-day.level-4::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(45deg, #60a5fa, #3b82f6, #1d4ed8, #60a5fa);
+    border-radius: var(--border-radius);
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.calendar-day.level-4:hover::after {
+    opacity: 0.3;
+    animation: glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+    from { opacity: 0.2; }
+    to { opacity: 0.4; }
+}
 
 /* カレンダーサイドバー */
 .calendar-sidebar {
@@ -1102,16 +1227,43 @@ body {
     border: 1px solid var(--border-color);
 }
 
-.legend-color.level-0 { background-color: var(--surface-color); }
-.legend-color.level-1 { background-color: #dbeafe; }
-.legend-color.level-2 { background-color: #bfdbfe; }
-.legend-color.level-3 { background-color: #93c5fd; }
-.legend-color.level-4 { background-color: #60a5fa; }
+.legend-color.level-0 { 
+    background: var(--surface-color);
+    border: 1px solid var(--border-light);
+}
+.legend-color.level-1 { 
+    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+    border: 1px solid #bae6fd;
+}
+.legend-color.level-2 { 
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    border: 1px solid #93c5fd;
+}
+.legend-color.level-3 { 
+    background: linear-gradient(135deg, #93c5fd, #60a5fa);
+    border: 1px solid #3b82f6;
+}
+.legend-color.level-4 { 
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    border: 1px solid #1e40af;
+}
 
-[data-theme="dark"] .legend-color.level-1 { background-color: #1e3a8a; }
-[data-theme="dark"] .legend-color.level-2 { background-color: #1e40af; }
-[data-theme="dark"] .legend-color.level-3 { background-color: #1d4ed8; }
-[data-theme="dark"] .legend-color.level-4 { background-color: #2563eb; }
+[data-theme="dark"] .legend-color.level-1 { 
+    background: linear-gradient(135deg, #1e3a8a, #1e40af);
+    border: 1px solid #3b82f6;
+}
+[data-theme="dark"] .legend-color.level-2 { 
+    background: linear-gradient(135deg, #1e40af, #1d4ed8);
+    border: 1px solid #3b82f6;
+}
+[data-theme="dark"] .legend-color.level-3 { 
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    border: 1px solid #60a5fa;
+}
+[data-theme="dark"] .legend-color.level-4 { 
+    background: linear-gradient(135deg, #2563eb, #1e40af);
+    border: 1px solid #60a5fa;
+}
 
 .project-usage-chart {
     background-color: var(--surface-color);

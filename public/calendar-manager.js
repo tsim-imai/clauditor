@@ -259,6 +259,9 @@ class CalendarManager {
         
         // data-date属性を追加（選択状態管理用）
         dayElement.setAttribute('data-date', dateKey);
+        dayElement.setAttribute('tabindex', '0'); // キーボードフォーカス対応
+        dayElement.setAttribute('role', 'button'); // アクセシビリティ
+        dayElement.setAttribute('aria-label', `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`);
         console.log('📅 Created calendar day:', dateKey, 'for date:', date);
         
         const dayNumber = date.getDate();
@@ -304,6 +307,14 @@ class CalendarManager {
         // クリックイベント（イベントオブジェクトも渡す）
         dayElement.addEventListener('click', (event) => {
             this.selectDate(date, event.target);
+        });
+
+        // キーボード操作対応
+        dayElement.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                this.selectDate(date, event.target);
+            }
         });
 
         return dayElement;
