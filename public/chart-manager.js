@@ -1,8 +1,10 @@
+import { Utils } from './utils.js';
+
 /**
  * チャート描画と管理を担当するクラス
  * Chart.jsを使用した4つのメインチャート（Usage、Hourly、Project、Weekly）の作成・更新・テーマ管理を行う
  */
-class ChartManager {
+export class ChartManager {
     constructor(dataProcessor, settings) {
         this.dataProcessor = dataProcessor;
         this.settings = settings;

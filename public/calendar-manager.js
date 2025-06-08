@@ -2,7 +2,7 @@
  * カレンダー表示と管理を担当するクラス
  * カレンダー描画、日付選択、日別統計表示、プロジェクト別チャート管理を行う
  */
-class CalendarManager {
+export class CalendarManager {
     constructor(duckDBProcessor, settings) {
         this.duckDBProcessor = duckDBProcessor;
         this.settings = settings;

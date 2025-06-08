@@ -2,7 +2,7 @@
  * ミニモードの管理を担当するクラス
  * ミニモード表示、チャート生成、統計更新、UI制御を行う
  */
-class MiniModeManager {
+export class MiniModeManager {
     constructor(duckDBProcessor, settings) {
         this.duckDBProcessor = duckDBProcessor;
         this.settings = settings;

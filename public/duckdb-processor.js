@@ -1,8 +1,10 @@
+import { Utils } from './utils.js';
+
 /**
  * DuckDBデータプロセッサー
  * 高速JSONLファイル処理とSQL集計機能を提供
  */
-class DuckDBDataProcessor {
+export class DuckDBDataProcessor {
     constructor() {
         this.cache = new Map();
         this.cacheTime = 30000; // 30秒キャッシュ

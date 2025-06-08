@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, MenuItem } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
@@ -64,8 +64,38 @@ const executeDuckDBQuery = async (query: string): Promise<any[]> => {
   try {
     console.log('🦆 Executing DuckDB query via CLI...');
     // JSON出力を強制するために-jsonフラグを使用
-    const command = `duckdb -json -c "${query.replace(/"/g, '\\"')}"`;
-    const { stdout, stderr } = await execAsync(command);
+    // DuckDBのパスを探索（複数の場所をチェック）
+    const possiblePaths = [
+      '/opt/homebrew/bin/duckdb',  // Apple Silicon Mac
+      '/usr/local/bin/duckdb',     // Intel Mac
+      'duckdb'                     // PATH環境変数から
+    ];
+    
+    let duckdbPath = null;
+    for (const path of possiblePaths) {
+      try {
+        console.log(`🧪 Testing DuckDB path: ${path}`);
+        await execAsync(`${path} --version`, { 
+          timeout: 5000,
+          env: { ...process.env, PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' }
+        });
+        duckdbPath = path;
+        console.log(`✅ DuckDB found at: ${path}`);
+        break;
+      } catch (e) {
+        console.log(`❌ DuckDB not found at: ${path} - ${e.message}`);
+      }
+    }
+    
+    if (!duckdbPath) {
+      throw new Error('DuckDB not found in any expected location. Please install DuckDB: brew install duckdb');
+    }
+    
+    const command = `${duckdbPath} -json -c "${query.replace(/"/g, '\\"')}"`;
+    const { stdout, stderr } = await execAsync(command, { 
+      env: { ...process.env, PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' },
+      timeout: 30000 // 30秒タイムアウト
+    });
     
     if (stderr) {
       console.warn('DuckDB Warning:', stderr);
@@ -99,8 +129,16 @@ const executeDuckDBQuery = async (query: string): Promise<any[]> => {
     }
     
   } catch (error) {
-    console.error('DuckDB CLI Error:', error);
-    throw new Error(`DuckDB CLI実行に失敗しました: ${error.message}`);
+    console.error('🚨 DuckDB CLI Error:', {
+      message: error.message,
+      code: error.code,
+      signal: error.signal,
+      stderr: error.stderr,
+      stdout: error.stdout,
+      query: query.substring(0, 200) + '...',
+      env: process.env.PATH
+    });
+    throw new Error(`DuckDB execution failed: ${error.message}`);
   }
 };
 
@@ -233,6 +271,9 @@ const createWindow = (): void => {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      webSecurity: false, // DuckDB CLIアクセスのため
+      enableRemoteModule: false,
+      devTools: true // ビルド版でも開発者ツールを有効化
     },
     titleBarStyle: 'default', // macOS default title bar for dragging
     title: 'Clauditor - Claude Code 使用状況ダッシュボード',
@@ -249,6 +290,41 @@ const createWindow = (): void => {
   console.log('app.isPackaged:', app.isPackaged);
   console.log('__dirname:', __dirname);
   
+  // ファイルの存在確認とデバッグ情報
+  try {
+    const htmlExists = existsSync(htmlPath);
+    console.log(`HTML file exists: ${htmlExists} at ${htmlPath}`);
+    
+    if (!htmlExists) {
+      console.error('❌ HTML file not found!');
+      
+      // 他の可能なパスを試行
+      const possiblePaths = [
+        path.join(__dirname, '../public/index.html'),
+        path.join(__dirname, '../dist/index.html'),
+        path.join(__dirname, 'public/index.html'),
+        path.join(__dirname, 'dist/index.html'),
+        path.join(process.resourcesPath, 'app.asar/dist/index.html'),
+        path.join(process.resourcesPath, 'app.asar/public/index.html')
+      ];
+      
+      for (const possiblePath of possiblePaths) {
+        const exists = existsSync(possiblePath);
+        console.log(`📂 Path ${possiblePath}: ${exists ? '✅ EXISTS' : '❌ NOT FOUND'}`);
+      }
+      
+      // __dirnameの周辺ディレクトリを確認
+      const parentDir = path.dirname(__dirname);
+      console.log(`📁 Parent directory: ${parentDir}`);
+      if (existsSync(parentDir)) {
+        const parentFiles = readdirSync(parentDir);
+        console.log('📁 Parent directory contents:', parentFiles);
+      }
+    }
+  } catch (error) {
+    console.error('Error checking HTML file:', error);
+  }
+  
   mainWindow.loadFile(htmlPath);
   
   // 開発時のみDevToolsを自動で開く
@@ -256,6 +332,14 @@ const createWindow = (): void => {
     // DevToolsを別ウィンドウで開く
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
+  
+  // キーボードショートカットで開発者ツールを有効化（本番環境でも）
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // Cmd+Option+I (macOS) で開発者ツールを開く
+    if (input.meta && input.alt && input.key === 'i') {
+      mainWindow?.webContents.openDevTools({ mode: 'detach' });
+    }
+  });
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {

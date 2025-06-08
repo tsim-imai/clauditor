@@ -1,3 +1,10 @@
+import { DuckDBDataProcessor } from './duckdb-processor.js';
+import { SettingsManager } from './settings-manager.js';
+import { MiniModeManager } from './mini-mode-manager.js';
+import { CalendarManager } from './calendar-manager.js';
+import { ChartManager } from './chart-manager.js';
+import { Utils } from './utils.js';
+
 // アプリケーション状態
 class AppState {
     constructor() {

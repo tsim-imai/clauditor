@@ -1,8 +1,10 @@
+import { Utils } from './utils.js';
+
 /**
  * 設定管理とUIモーダル制御を担当するクラス
  * 設定の保存・読み込み、モーダル表示、為替レート取得、ダークモード管理を行う
  */
-class SettingsManager {
+export class SettingsManager {
     constructor() {
         this.settings = {
             exchangeRate: 150,
