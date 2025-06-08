@@ -394,6 +394,16 @@ class DuckDBDataProcessor {
                   AND timestamp >= '${startDate}'
             `;
 
+            // 正確なプロジェクト数クエリ（統計カード用）
+            const projectCountQuery = `
+                SELECT 
+                    COUNT(DISTINCT regexp_extract(filename, '.*/([^/]+)/[^/]*\\.jsonl$', 1)) as total_project_count
+                FROM read_json('${this.projectsPath}/**/*.jsonl', ignore_errors=true, filename=true)
+                WHERE timestamp IS NOT NULL 
+                  AND timestamp >= '${startDate}'
+                  AND regexp_extract(filename, '.*/([^/]+)/[^/]*\\.jsonl$', 1) IS NOT NULL
+            `;
+
             // アクティブ時間計算クエリ（期間に応じた適切な計算）
             let activeHoursQuery;
             if (period === 'today') {
@@ -428,11 +438,12 @@ class DuckDBDataProcessor {
             const comparisonQuery = this.generateComparisonQuery(period, comparisonUnit, comparisonPeriod);
 
             // 並列クエリ実行
-            const [timeSeriesData, hourlyData, projectData, statsData, activeHoursData, comparisonData] = await Promise.all([
+            const [timeSeriesData, hourlyData, projectData, statsData, projectCountData, activeHoursData, comparisonData] = await Promise.all([
                 this.executeDuckDBQuery(timeSeriesQuery),
                 this.executeDuckDBQuery(hourlyQuery),
                 this.executeDuckDBQuery(projectQuery),
                 this.executeDuckDBQuery(statsQuery),
+                this.executeDuckDBQuery(projectCountQuery),
                 this.executeDuckDBQuery(activeHoursQuery),
                 this.executeDuckDBQuery(comparisonQuery)
             ]);
@@ -449,7 +460,10 @@ class DuckDBDataProcessor {
                 activeHoursValue: actualActiveHours
             });
             
-            const chartData = this.formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, statsData[0], period, aggregationUnit, actualActiveHours, comparisonData, comparisonPeriod);
+            // 正確なプロジェクト数を取得
+            const actualProjectCount = projectCountData && projectCountData[0] ? projectCountData[0].total_project_count : 0;
+            
+            const chartData = this.formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, statsData[0], period, aggregationUnit, actualActiveHours, comparisonData, comparisonPeriod, actualProjectCount);
             
             // 両方のキャッシュに保存
             const cacheEntry = { data: chartData, timestamp: Date.now() };
@@ -491,7 +505,7 @@ class DuckDBDataProcessor {
     /**
      * 時系列データをChartManager互換形式にフォーマット
      */
-    formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, stats, period, unit, actualActiveHours = null, comparisonData = null, comparisonPeriod = null) {
+    formatChartDataWithTimeSeries(timeSeriesData, hourlyData, projectData, stats, period, unit, actualActiveHours = null, comparisonData = null, comparisonPeriod = null, actualProjectCount = null) {
         console.log('🔍 formatChartDataWithTimeSeries 開始:', {
             timeSeriesDataLength: timeSeriesData?.length,
             hourlyDataLength: hourlyData?.length,
@@ -611,7 +625,7 @@ class DuckDBDataProcessor {
                 costUSD: totalStats.totalCostUSD,
                 costJPY: totalStats.totalCostJPY,
                 entries: totalStats.totalEntries,
-                projectCount: projectLabels.length // プロジェクト数を追加
+                projectCount: actualProjectCount !== null ? actualProjectCount : projectLabels.length // 正確なプロジェクト数を使用
             },
             
             // アクティブ時間（実際に使用された時間帯の数）
@@ -695,7 +709,7 @@ class DuckDBDataProcessor {
                 costUSD: totalStats.totalCostUSD,
                 costJPY: totalStats.totalCostJPY,
                 entries: totalStats.totalEntries,
-                projectCount: projectLabels.length // プロジェクト数を追加
+                projectCount: actualProjectCount !== null ? actualProjectCount : projectLabels.length // 正確なプロジェクト数を使用
             },
             
             // アクティブ時間
